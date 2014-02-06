@@ -1,0 +1,49 @@
+
+*convert the variables of categorical nature into weight of evidence scores (woe);
+*var is the categorical (string values) variable, dt is the input dataset
+%macro add_woe(var, response, dt);
+proc freq data=&dt;
+	tables &var*&response / out=&var outpct;
+run;
+proc sql;
+	create table &var._h as
+	select t3.*, t4.count0, t4.percent0, t4.pct_row0, t4.pct_col0,
+		log(pct_col1/pct_col0)*100 as woe
+		from
+		(select t1.&var,
+				t1.count as count1 ,
+				t1.percent as percent1,
+				t1.pct_row as pct_row1,
+				t1.pct_col as pct_col1
+			from &var as t1
+			where &response = 1) as t3
+		left join
+			(select t2.&var,
+				t2.count as count0,
+				t2.percent as percent0,
+				t2.pct_row as pct_row0,
+				t2.pct_col as pct_col0
+			from &var as t2
+			where &response = 0) as t4
+		on t3.&var = t4.&var;
+run;
+data _null_;
+	set &var._h nobs=n;
+	call symput(trim(&var),woe);
+	call symput('val'||left(_n_),&var);
+	if _n_ = 1 then call symput('nval',n);
+run;
+data &dt;
+	set &dt;
+	%do i = 1 %to &nval;
+		%let temp = &&val&i;
+		%put &i;
+		%put &temp;
+		if &var = "&temp" then &var._woe = &&&temp;
+	%end;
+run;
+*depends on the purpose, if you want to calculate the woes by itself, then comment out the proc datasets below;
+proc datasets library=work;
+	delete &var &var._h;
+quit;
+%mend add_woe;
