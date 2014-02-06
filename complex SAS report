@@ -1,0 +1,2074 @@
+/*
+	Date: 			July, 2013
+	Programmer:		Lee Cai
+*/
+
+/*************************************************************/
+*clean all the datasets in library work;
+proc datasets lib=work kill memtype=data;
+quit;
+/*************************************************************/
+
+*Create the report date in macro variable ReportDate;
+data _null_;
+   call symput("ReportDate",left(put("&sysdate9"d,Date9.)));
+run;
+%put &ReportDate;
+
+%let OHAPHDir=C:\BRFQ Analysis\OHAPH; *the project folder that contains the SAS codes and other files;
+%let DataFolder=P09-011E-SubjectStudyData-08-27-2013; *the folder contains the downloaded files from Oncore;
+%let SASFileFolder=Oncore downloaded SAS files with modifications; *the folder contains the edited SAS codes;
+%let ReportDir=C:\Users\Lee Cai\Desktop; *the output destination;
+libname OHAPHlib "&OHAPHDir";
+%put &OHAPHDir ;
+
+data mrn_dataset;
+	infile "&OHAPHDir\SV_SUB_ONSTUDY.csv" dlm=',' firstobs=2 dsd missover;
+	length STUDY_SITE $100	PROTOCOL_SUBJECT_ID	$20 SUBJECT_MRN $20	PROTOCOL_NO	$20 SEQUENCE_NUMBER $20	ON_STUDYDATE $50;
+	input STUDY_SITE  PROTOCOL_SUBJECT_ID  SUBJECT_MRN  PROTOCOL_NO  SEQUENCE_NUMBER  ON_STUDYDATE;
+run;
+
+******************end of user specifications***************;
+
+*There are two places need to be modified in the OnCore generated SAS codes:
+First, the directory in the infile statement while the codes read in the data. Use MACRO variable
+		OHAPHDir for OHAPH study and GIFVTDir for GIFVT study as assigned above.
+Second, the read in format for variable Time_start (if any) should be changed to avoid inconsistent entry
+		of the variable format ##:##. Many data entries have missing colon ':'.
+		I change the format to $8.;
+
+title;
+footnote;
+%include "&OHAPHDir\&SASFileFolder\O1-Child SD V2.sas" / lrecl=500;
+%include "&OHAPHDir\&SASFileFolder\O1-Child SD V3.sas" / lrecl=500;
+%include "&OHAPHDir\&SASFileFolder\O2-Health and Access V3.sas" / lrecl=500;
+%include "&OHAPHDir\&SASFileFolder\O3-Insurance V4.sas" / lrecl=500;
+%include "&OHAPHDir\&SASFileFolder\O3-Insurance V5.sas" / lrecl=500;
+%include "&OHAPHDir\&SASFileFolder\O3p-Insurance V1.sas" / lrecl=500;
+%include "&OHAPHDir\&SASFileFolder\O4-OH Behavior V4.sas" / lrecl=500;
+%include "&OHAPHDir\&SASFileFolder\O4-OH Behavior V5.sas" / lrecl=500;
+%include "&OHAPHDir\&SASFileFolder\O5-OH Knowledge I V4.sas" / lrecl=500;
+%include "&OHAPHDir\&SASFileFolder\O5-OH Knowledge I V5.sas" / lrecl=500;
+%include "&OHAPHDir\&SASFileFolder\O6-Motivation V2.sas" / lrecl=500;
+%include "&OHAPHDir\&SASFileFolder\O6-Motivation V3.sas" / lrecl=500;
+%include "&OHAPHDir\&SASFileFolder\O7-OH Knowledge II V3.sas" / lrecl=500;
+%include "&OHAPHDir\&SASFileFolder\O7-OH Knowledge II V4.sas" / lrecl=500;
+%include "&OHAPHDir\&SASFileFolder\O8-Caregiver Health V4.sas" / lrecl=500;
+%include "&OHAPHDir\&SASFileFolder\O8-Caregiver Health V5.sas" / lrecl=500;
+%include "&OHAPHDir\&SASFileFolder\O9-Caregiver SD V3.sas" / lrecl=500;
+%include "&OHAPHDir\&SASFileFolder\O9-Caregiver SD V4.sas" / lrecl=500;
+title;
+footnote;
+
+*The generated SAS data sets include:
+	O1_CHILD_SD_V2	O1_CHILD_SD_V2_FMT
+	O1_CHILD_SD_V3	O1_CHILD_SD_V3_FMT
+	O2_HEALTH_AND_ACCESS_V3	O2_HEALTH_AND_ACCESS_V3_FMT
+	O3_INSURANCE_V4	O3_INSURANCE_V4_FMT
+	O3_INSURANCE_V5	O3_INSURANCE_V5_FMT
+	O3P_INSURANCE_V1	O3P_INSURANCE_V1_FMT
+	O4_OH_BEHAVIOR_V4	O4_OH_BEHAVIOR_V4_FMT
+	O4_OH_BEHAVIOR_V5	O4_OH_BEHAVIOR_V5_FMT
+	O5_OH_KNOWLEDGE_I_V4	O5_OH_KNOWLEDGE_I_V4_FMT
+	O5_OH_KNOWLEDGE_I_V5	O5_OH_KNOWLEDGE_I_V5_FMT
+	O6_MOTIVATION_V2	O6_MOTIVATION_V2_FMT
+	O6_MOTIVATION_V3	O6_MOTIVATION_V3_FMT
+	O7_OH_KNOWLEDGE_II_V3	O7_OH_KNOWLEDGE_II_V3_FMT
+	O7_OH_KNOWLEDGE_II_V4	O7_OH_KNOWLEDGE_II_V4_FMT
+	O8_CAREGIVER_HEALTH_V4	O8_CAREGIVER_HEALTH_V4_FMT
+	O8_CAREGIVER_HEALTH_V5	O8_CAREGIVER_HEALTH_V5_FMT
+	O9_CAREGIVER_SD_V3	O9_CAREGIVER_SD_V3_FMT
+	O9_CAREGIVER_SD_V4	O9_CAREGIVER_SD_V4_FMT;
+
+%include "&OHAPHDir\MatchLabels_OHAPH.sas" /lrecl=500;
+
+*macro functions to check var type and change all discrepancies into char variables, if any;
+%macro CheckVarType(Data1,Data2);
+	proc contents data=&Data1 out=&Data1._Cont noprint;
+    run;
+	proc contents data=&Data2 out=&Data2._Cont noprint;
+    run;
+
+	proc sql;
+		create table DataTypeCheck as
+		select D1.Name, 
+			   D1.TYPE AS TYPE1,
+			   D2.TYPE as TYPE2,
+			   cats(D1.FORMAT,D1.FORMATL,'.') as FORMAT1,
+			   cats(D2.FORMAT,D2.FORMATL,'.') as FORMAT2,
+			   case
+			   	when TYPE1=TYPE2 THEN 'same' /*0 MEANS data type is the same*/
+				when TYPE1>TYPE2 THEN D2.MEMNAME /*1 MEANS data type is not the same and the second data set has type Num*/
+				ELSE D1.MEMNAME				/*2 MEANS data type is not the same and the first data set has type Num*/
+			   END  AS DIF
+		from &Data1._Cont as D1
+		left outer join
+			 &Data2._Cont as D2
+			 on D1.Name=D2.Name
+		where calculated DIF ne 'same';
+	quit;
+
+	proc sql noprint;
+		select count(*)
+		into :Nobs
+		from DataTypeCheck;
+	quit;
+
+	*If there are more than one variable have different data type, then we need to use this macro variable;
+	%put &Nobs;
+
+	%if &Nobs ne 0 %then %do;
+		data _null_;
+			set DataTypeCheck;
+			call symput(cats('VarTypeChange',_N_),strip(Name));
+			call symput(cats('DataNeedChange',_N_),strip(DIF));
+		run;
+
+		%do k=1 %to &Nobs;
+			%put &&VarTypeChange&k;
+			%put &&DataNeedChange&k;
+			
+			data &&DataNeedChange&k;
+			set &&DataNeedChange&k;
+			length &&VarTypeChange&k.._new $400.;
+			if &&VarTypeChange&k=. then &&VarTypeChange&k.._new='';
+			else &&VarTypeChange&k.._new=put(&&VarTypeChange&k,32.);
+			drop &&VarTypeChange&k; 
+			rename &&VarTypeChange&k.._new=&&VarTypeChange&k;
+			run; 
+		%end;
+		%put Different variable types for the same variable have been changed.;
+	%end;
+
+	%if &Nobs=0 %then %put The data type of all variables are the same.;
+%mend CheckVarType;
+
+*here goes the macro for joining the data of the same form in different versions;
+%macro JoinDataDifVersion/parmbuff;
+	%put Syspbuff contains: &syspbuff;
+	%let data_cnt=%eval(%sysfunc(countw("&syspbuff"))-2);
+	%put Number of datasets joined: &data_cnt;
+
+	%DO I=1 %to &data_cnt;
+		%LET Data&I=%SCAN(&syspbuff,&I);
+	    %put &&Data&I;
+		%put &&Data&I.._cont;
+
+		proc contents data=&&Data&I out=&&Data&I.._Cont noprint;
+	    run;
+
+		data &&Data&I.._Var;
+			set &&Data&I.._Cont (keep=NAME);
+			if index(NAME,'Label') ge 1 then delete;
+			if index(Name,'English') ge 1 then delete;
+			if Name = 'NOT_APPLICABLE_OR_MISSING' then delete;
+			IF index(Name,'Space') ge 1 then delete;
+			if index(Name,'Spanish') ge 1 then delete;
+		run;
+
+		proc sql noprint;
+			select NAME
+			into :VarList&I separated by ','
+			from &&Data&I.._Var;
+		quit;
+
+		%put &&VarList&I;
+	%END;
+/*
+	%if &data_cnt le 1 %then %do;
+		%put Please choose at least two datasets;
+		%return;
+	%end;*/
+
+	%do J=2 %to &data_cnt;
+		%CheckVarType(&Data1,&&Data&J);
+	%end;
+
+	%do K=1 %to &data_cnt;
+		proc sql noprint;
+			select strip(FORM), strip(FORM_DESC_)
+			into :Form&K, :FormDesc&K
+			from &&Data&K;
+		quit;
+		%put &&Form&K; %put &&FormDesc&K;
+		%if &K ge 2 %then %do;
+			%if "&FormDesc1" ne "&&FormDesc&K" %then %do;
+				%put Errors: the two forms you try to join is not the same forms;
+				%return;
+			%end;
+		%end;
+	%end;
+	
+	%put &FormDesc1; 
+	%let JoinData=%sysfunc(translate(&Form1,'__',' -'));
+	%let JoinData1=%sysfunc(length(&JoinData));
+	%let JoinData2=%eval(&JoinData1-3);
+	%let JoinData3=%sysfunc(substr(&JoinData,1,&JoinData2));
+	%put &JoinData;
+	%put &JoinData1;
+	%put &JoinData2;
+	%put &JoinData3; 
+
+	proc sql;
+		create table &JoinData3 as
+		select &VarList1
+		from &Data1 as D1
+		%do L=2 %to &data_cnt;
+		outer union corr
+		select &&VarList&L
+		from &&Data&L as D&L
+		%end;
+		order by SEQUENCE_NO_,VISIT_DATE,DAY_1;
+	quit;
+
+%mend JoinDataDifVersion;
+
+*rename O3p_insurance_v1_fmt to O3_insurance_v1_fmt for merging with the O3s;
+data O3_INSURANCE_V1_FMT;
+	SET O3P_INSURANCE_V1_FMT;
+	FORM = "O3-Insurance V1";
+	FORM_DESC_ = "Child Insurance Status and Service Use";
+RUN;
+
+*The comment after the macro call is the name of the main output dataset that we need;
+%JoinDataDifVersion(O1_CHILD_SD_V2_FMT,O1_CHILD_SD_V3_FMT); *O1_CHILD_SD;
+%JoinDataDifVersion(O2_HEALTH_AND_ACCESS_V3_FMT); *O2_HEALTH_AND_ACCESS;
+%JoinDataDifVersion(O3_INSURANCE_V4_FMT,O3_INSURANCE_V5_FMT,O3_INSURANCE_V1_FMT); *O3_INSURANCE;
+%JoinDataDifVersion(O4_OH_BEHAVIOR_V4_FMT,O4_OH_BEHAVIOR_V5_FMT); *O4_OH_BEHAVIOR;
+%JoinDataDifVersion(O5_OH_KNOWLEDGE_I_V4_FMT,O5_OH_KNOWLEDGE_I_V5_FMT); *O5_OH_KNOWLEDGE_I;
+%JoinDataDifVersion(O6_MOTIVATION_V2_FMT,O6_MOTIVATION_V3_FMT); *O6_MOTIVATION;
+%JoinDataDifVersion(O7_OH_KNOWLEDGE_II_V3_FMT,O7_OH_KNOWLEDGE_II_V4_FMT); *O7_OH_KNOWLEDGE_II;
+%JoinDataDifVersion(O8_CAREGIVER_HEALTH_V4_FMT,O8_CAREGIVER_HEALTH_V5_FMT); *O8_CAREGIVER_HEALTH;
+%JoinDataDifVersion(O9_CAREGIVER_SD_V3_FMT,O9_CAREGIVER_SD_V4_FMT); *O9_CAREGIVER_SD;
+
+data O1_CHILD_SD_skp;
+	SET O1_CHILD_SD;
+	cnt_ESD07A = countw(ESD07A,';');
+	cnt_ESD08 = countw(ESD08,';');
+**********************;
+	/*
+	if ESD07 not in (0,1,77,98,99) and ESD07 ne . then ESD07 = .O;
+	if ESD07 = . then ESD07 = .M;*/
+
+	if ESD07 not in (0,1,77,98,99) and ESD07 ne . then ESD07_c = "O";
+	else if ESD07 = . then ESD07_c = "M";
+	else ESD07_c = "F";
+**********************;	
+	if cnt_ESD07A = 1 then do;
+		if ESD07A not in ("1","2","3","4","5","6","7","8","9","77","98","99") and ESD07A ne "" then ESD07A = "O";
+	end;
+	else do;
+		do i = 1 to cnt_ESD07A;
+			if scan(ESD07A,i) not in ("1","2","3","4","5","6","7","8","9","77","98","99") then do;
+				ESD07A = "O";
+				leave;
+			end;
+		end;
+	end;
+	if ESD07 = 1 and ESD07A = "" then ESD07A = "M";
+	else if ESD07 = 1 and ESD07A ne "" then ESD07A = ESD07A;
+	else if ESD07 in (0,77,98,99) and ESD07A = "" then ESD07A = "S";
+	else if ESD07 in (0,77,98,99) and ESD07A ne "" then ESD07A = "N";
+	else ESD07A = "P";
+
+	if index(ESD07A,'6') ne 0 and ESD07Fc_s = "" then ESD07Fc_s = "M";
+	else if index(ESD07A,'6') ne 0 and ESD07Fc_s ne "" then ESD07Fc_s = ESD07Fc_s;
+	else if ESD07A not in ("M","O","N","P") and ESD07Fc_s = "" then ESD07Fc_s = "S";
+	else if ESD07A not in ("M","O","N","P") and ESD07Fc_s ne "" then ESD07Fc_s = "N";
+	else ESD07Fc_s = "P";
+
+	if index(ESD07A,'7') ne 0 and index(ESD07A,'77') = 0 and ESD07Fs_s = "" then ESD07Fs_s = "M";
+	else if index(ESD07A,'7') ne 0 and index(ESD07A,'77') = 0 and ESD07Fs_s ne "" then ESD07Fs_s = ESD07Fs_s;
+	else if ESD07A not in ("M","O","N","P") and ESD07Fs_s = "" then ESD07Fs_s = "S";
+	else if ESD07A not in ("M","O","N","P") and ESD07Fs_s ne "" then ESD07Fs_s = "N";
+	else ESD07Fs_s = "P";
+	
+	if index(ESD07A,'8') ne 0 and index(ESD07A,'98') = 0 and ESD07G_s = "" then ESD07G_s = "M";
+	else if index(ESD07A,'8') ne 0 and index(ESD07A,'98') = 0 and ESD07G_s ne "" then ESD07G_s = ESD07G_s;
+	else if ESD07A not in ("M","O","N","P") and ESD07G_s = "" then ESD07G_s = "S";
+	else if ESD07A not in ("M","O","N","P") and ESD07G_s ne "" then ESD07G_s = "N";
+	else ESD07G_s = "P";
+
+	if index(ESD07A,'9') ne 0 and index(ESD07A,'99') = 0 and ESD07H_s = "" then ESD07H_s = "M";
+	else if index(ESD07A,'9') ne 0 and index(ESD07A,'99') = 0 and ESD07H_s ne "" then ESD07H_s = ESD07H_s;
+	else if ESD07A not in ("M","O","N","P") and ESD07H_s = "" then ESD07H_s = "S";
+	else if ESD07A not in ("M","O","N","P") and ESD07H_s ne "" then ESD07H_s = "N";
+	else ESD07H_s = "P";
+
+	if cnt_ESD08 = 1 then do;
+		if ESD08 not in ("1","2","3","4","5","6","7","8","77","98","99") and ESD08 ne "" then ESD08 = "O";
+	end;
+	else do;
+		do i = 1 to cnt_ESD08;
+			if scan(ESD08,i) not in ("1","2","3","4","5","6","7","8","77","98","99") then do;
+				ESD08 = "O";
+				leave;
+			end;
+		end;
+	end;
+	if ESD08 = "" then ESD08 = "M";
+	
+	if ESD08F not in ("0","1","2","3","77","98","99") and ESD08F ne "" then ESD08F = "O";
+	if index(ESD08,'6') ne 0 and ESD08F = "" then ESD08F = "M";
+	else if index(ESD08,'6') ne 0 and ESD08F ne "" then ESD08F = ESD08F;
+	else if ESD08 not in ("M","O","N","P") and ESD08F in ("",'0') then ESD08F = "S";
+	else if ESD08 not in ("M","O","N","P") and ESD08F not in ("",'0') then ESD08F = "N";
+	else ESD08F = "P";
+
+	if ESD08G not in ("1","2","3","4","5","6","7","77","98","99") and ESD08G ne "" then ESD08G = "O";
+	if index(ESD08,'7') ne 0 and index(ESD08,'77') = 0 and ESD08G = "" then ESD08G = "M";
+	else if index(ESD08,'7') ne 0 and index(ESD08,'77') = 0 and ESD08G ne "" then ESD08G = ESD08G;
+	else if ESD08 not in ("M","O","N","P") and ESD08G = "" then ESD08G = "S";
+	else if ESD08 not in ("M","O","N","P") and ESD08G ne "" then ESD08G = "N";
+	else ESD08G = "P";
+
+	if index(ESD08,'8') ne 0 and index(ESD08,'98') = 0 and ESD08_s = "" then ESD08_s = "M";
+	else if index(ESD08,'8') ne 0 and index(ESD08,'98') = 0 and ESD08_s ne "" then ESD08_s = ESD08_s;
+	else if ESD08 not in ("M","O","N","P") and ESD08_s = "" then ESD08_s = "S";
+	else if ESD08 not in ("M","O","N","P") and ESD08_s ne "" then ESD08_s = "N";
+	else ESD08_s = "P";
+
+	if ESD08F = "3" and ESD08F_s = "" then ESD08F_s = "M";
+	else if ESD08F = "3" and ESD08F_s ne "" then ESD08F_s = ESD08F_s;
+	else if ESD08F in ("1","2","77","98","99","S") and ESD08F_s = "" then ESD08F_s = "S";
+	else if ESD08F in ("1","2","77","98","99","S") and ESD08F_s ne "" then ESD08F_s = "N";
+	else ESD08F_s = "P";
+
+	if ESD08G = "7" and ESD08G_s = "" then ESD08G_s = "M";
+	else if ESD08G = "7" and ESD08G_s ne "" then ESD08G_s = ESD08G_s;
+	else if ESD08G in ("1","2","77","98","99","S") and ESD08G_s = "" then ESD08G_s = "S";
+	else if ESD08G in ("1","2","77","98","99","S") and ESD08G_s ne "" then ESD08G_s = "N";
+	else ESD08G_s = "P";
+****************************;
+	/*
+	if ESD10 not in (1,2,3,4,5,6,7,8,9,10,11,77,98,99) and ESD10 ne . then ESD10 = .O;
+	if ESD10 = . then ESD10 = .M;*/
+
+	if ESD10 not in (1,2,3,4,5,6,7,8,9,10,11,77,98,99) and ESD10 ne . then ESD10_c = "O";
+	else if ESD10 = . then ESD10_c = "M";
+	else ESD10_c = "F";
+****************************;
+	if ESD10 = 11 and ESD10_s = "" then ESD10_s = "M";
+	else if ESD10 = 11 and ESD10_s ne "" then ESD10_s = ESD10_s;
+	else if ESD10 in (1,2,3,4,5,6,7,8,9,10,77,98,99) and ESD10_s = "" then ESD10_s = "S";
+	else if ESD10 in (1,2,3,4,5,6,7,8,9,10,77,98,99) and ESD10_s ne "" then ESD10_s = "N";
+	else ESD10_s = "P";
+run;
+
+
+data O2_HEALTH_AND_ACCESS_skp;
+	set O2_HEALTH_AND_ACCESS;
+	if OHS03 not in (1,2,3,4,5,77,98,99) and OHS03 ne . then OHS03 = .O;
+	if OHS03 = . then OHS03 = .M;
+	
+	if OPQ01A not in (1,2,3,4,77,98,99) and OPQ01A ne . then OPQ01A = .O;
+	if O2skip2_7 = 0 and OPQ01A = . then OPQ01A = .M;
+	else if O2skip2_7 = 0 and OPQ01A ne . then OPQ01A = OPQ01A;
+	else if O2skip2_7 = 1 and OPQ01A = . then OPQ01A = .S;
+	else if O2skip2_7 = 1 and OPQ01A ne . then OPQ01A = .N;
+	else OPQ01A = .P;
+
+	if OPQ01B not in (1,2,3,4,5,77,98,99) and OPQ01B ne . then OPQ01B = .O;
+	if OPQ01A in (1,2,3,99) and OPQ01B = . then OPQ01B = .M;
+	else if OPQ01A in (1,2,3,99) and OPQ01B ne . then OPQ01B = OPQ01B;
+	else if OPQ01A in (4,77,98,.S) and OPQ01B = . then OPQ01B = .S;
+	else if OPq01A in (4,77,98,.S) and OPQ01B ne . then OPQ01B = .N;
+	else OPQ01B = .P;
+
+	if OPQ02A not in (1,2,3,4,77,98,99) and OPQ02A ne . then OPQ02A = .O;
+	if O2skip2_7 = 0 and OPQ02A = . then OPQ02A = .M;
+	else if O2skip2_7 = 0 and OPQ02A ne . then OPQ02A = OPQ02A;
+	else if O2skip2_7 = 1 and OPQ02A = . then OPQ02A = .S;
+	else if O2skip2_7 = 1 and OPQ02A ne . then OPQ02A = .N;
+	else OPQ02A = .P;
+
+	if OPQ02B not in (1,2,3,4,5,77,98,99) and OPQ02B ne . then OPQ02B = .O;
+	if OPQ02A in (1,2,3,99) and OPQ02B = . then OPQ02B = .M;
+	else if OPQ02A in (1,2,3,99) and OPQ02B ne . then OPQ02B = OPQ02B;
+	else if OPQ02A in (4,77,98,.S) and OPQ02B = . then OPQ02B = .S;
+	else if OPQ02A in (4,77,98,.S) and OPQ02B ne . then OPQ02B = .N;
+	else OPQ02B = .P;
+
+	if OPQ03A not in (1,2,3,4,77,98,99) and OPQ03A ne . then OPQ03A = .O;
+	if O2skip2_7 = 0 and OPQ03A = . then OPQ03A = .M;
+	else if O2skip2_7 = 0 and OPQ03A ne . then OPQ03A = OPQ03A;
+	else if O2skip2_7 = 1 and OPQ03A = . then OPQ03A = .S;
+	else if O2skip2_7 = 1 and OPQ03A ne . then OPQ03A = .N;
+	else OPQ03A = .P;	
+
+	if OPQ03B not in (1,2,3,4,5,77,98,99) and OPQ03B ne . then OPQ03B = .O;
+	if OPQ03A in (1,2,3,99) and OPQ03B = . then OPQ03B = .M;
+	else if OPQ03A in (1,2,3,99) and OPQ03B ne . then OPQ03B = OPQ03B;
+	else if OPQ03A in (4,77,98,.S) and OPQ03B = . then OPQ03B = .S;
+	else if OPQ03A in (4,77,98,.S) and OPQ03B ne . then OPQ03B = .N;
+	else OPQ03B = .P;
+
+	if OPQ04A not in (1,2,3,4,77,98,99) and OPQ04A ne . then OPQ04A = .O;
+	if O2skip2_7 = 0 and OPQ04A = . then OPQ04A = .M;
+	else if O2skip2_7 = 0 and OPQ04A ne . then OPQ04A = OPQ04A;
+	else if O2skip2_7 = 1 and OPQ04A = . then OPQ04A = .S;
+	else if O2skip2_7 = 1 and OPQ04A ne . then OPQ04A = .N;
+	else OPQ04A = .P;
+
+	if OPQ04B not in (1,2,3,4,5,77,98,99) and OPQ04B ne . then OPQ04B = .O;
+	if OPQ04A in (1,2,3,99) and OPQ04B = . then OPQ04B = .M;
+	else if OPQ04A in (1,2,3,99) and OPQ04B ne . then OPQ04B = OPQ04B;
+	else if OPQ04A in (4,77,98,.S) and OPQ04B = . then OPQ04B = .S;
+	else if OPQ04A in (4,77,98,.S) and OPQ04B ne . then OPQ04B = .N;
+	else OPQ04B = .P;
+
+	if OPQ05A not in (1,2,3,4,77,98,99) and OPQ05A ne . then OPQ05A = .O;
+	if O2skip2_7 = 0 and OPQ05A = . then OPQ05A = .M;
+	else if O2skip2_7 = 0 and OPQ05A ne . then OPQ05A = OPQ05A;
+	else if O2skip2_7 = 1 and OPQ05A = . then OPQ05A = .S;
+	else if O2skip2_7 = 1 and OPQ05A ne . then OPQ05A = .N;
+	else OPQ05A = .P;
+
+	if OPQ05B not in (1,2,3,4,5,77,98,99) and OPQ05B ne . then OPQ05B = .O;
+	if OPQ05A in (1,2,3,99) and OPQ05B = . then OPQ05B = .M;
+	else if OPQ05A in (1,2,3,99) and OPQ05B ne . then OPQ05B = OPQ05B;
+	else if OPQ05A in (4,77,98,.S) and OPQ05B = . then OPQ05B = .S;
+	else if OPQ05A in (4,77,98,.S) and OPQ05B ne . then OPQ05B = .N;
+	else OPQ05B = .P;
+
+	if OPQ06A not in (1,2,3,4,77,98,99) and OPQ06A ne . then OPQ06A = .O;
+	if O2skip2_7 = 0 and OPQ06A = . then OPQ06A = .M;
+	else if O2skip2_7 = 0 and OPQ06A ne . then OPQ06A = OPQ06A;
+	else if O2skip2_7 = 1 and OPQ06A = . then OPQ06A = .S;
+	else if O2skip2_7 = 1 and OPQ06A ne . then OPQ06A = .N;
+	else OPQ06A = .P;
+
+	if OPQ06B not in (1,2,3,4,5,77,98,99) and OPQ06B ne . then OPQ06B = .O;
+	if OPQ06A in (1,2,3,99) and OPQ06B = . then OPQ06B = .M;
+	else if OPQ06A in (1,2,3,99) and OPQ06B ne . then OPQ06B = OPQ06B;
+	else if OPQ06A in (4,77,98,.S) and OPQ06B = . then OPQ06B = .S;
+	else if OPQ06A in (4,77,98,.S) and OPQ06B ne . then OPQ06B = .N;
+	else OPQ06B = .P;
+
+	if BUOPT01 not in (0,1,2,3,77,98,99) and BUOPT01 ne . then BUOPT01 = .O;
+	if BUOPT01 = . then BUOPT01 = .M;
+
+	if OHS03X not in (0,1,77,98,99) and OHS03X ne . then OHS03X = .O;
+	if OHS03X = . then OHS03X = .M;
+run;
+
+data O3_INSURANCE_skp;
+	set O3_INSURANCE;
+	cnt_EHS16B = countw(EHS16B,';');
+	if EHS16A not in (0,1,77,98,99) and EHS16A ne . then EHS16A = .O;
+	if EHS16A = . then EHS16A = .M;
+******************************;
+	/*if cnt_EHS16B = 1 then do;
+		if EHS16B not in ("1","2","3","4","5","77","98","99") and EHS16B ne '' then EHS16B = "O";
+	end;
+	else do;
+		do i = 1 to cnt_EHS16B;
+			if scan(EHS16B,i) not in ("1","2","3","4","5","77","98","99") then do;
+				EHS16B = "O";
+				leave;
+			end;
+		end;
+	end;
+	if EHS16A = 1 and EHS16B = "" then EHS16B = "M";
+	else if EHS16A = 1 and EHS16B ne "" then EHS16B = EHS16B;
+	else if EHS16A in (0,77,98,99) and EHS16B = "" then EHS16B = "S";
+	else if EHS16A in (0,77,98,99) and EHS16B ne "" then EHS16B = "N";
+	else EHS16B = "P";*/
+
+	if cnt_EHS16B = 1 then do;
+		if EHS16B not in ("1","2","3","4","5","77","98","99") and EHS16B ne '' then EHS16B_n = .O;
+	end;
+	else do;
+		do i = 1 to cnt_EHS16B;
+			if scan(EHS16B,i) not in ("1","2","3","4","5","77","98","99") then do;
+				EHS16B_n = .O;
+				leave;
+			end;
+		end;
+	end;
+	if EHS16A = 1 and EHS16B = "" then EHS16B_n = .M;
+	else if EHS16A = 1 and EHS16B ne "" then EHS16B_n = .F;
+	else if EHS16A in (0,77,98,99) and EHS16B = "" then EHS16B_n = .S;
+	else if EHS16A in (0,77,98,99) and EHS16B ne "" then EHS16B_n = .N;
+	else EHS16B_n = .P;
+
+	/*
+	if index(EHS16B,"5") ne 0 and EHS16B_s = "" then EHS16B_s = "M";
+	else if index(EHS16B,"5") ne 0 and EHS16B_s ne "" then EHS16B_s = EHS16B_s;
+	else if EHS16B not in ("M","N","O","P") and EHS16B_s = "" then EHS16B_s = "S";
+	else if EHS16B not in ("M","N","O","P") and EHS16B_s ne "" then EHS16B_s = "N";
+	else EHS16B_s = "P";*/
+
+	if index(EHS16B,"5") ne 0 and EHS16B_s = "" then EHS16B_s_n = .M;
+	else if index(EHS16B,"5") ne 0 and EHS16B_s ne "" then EHS16B_s_n = .F;
+	else if EHS16B not in ("M","N","O","P") and EHS16B_s = "" then EHS16B_s_n = .S;
+	else if EHS16B not in ("M","N","O","P") and EHS16B_s ne "" then EHS16B_s_n = .N;
+	else EHS16B_s_n = .P;
+*****************************;
+	if EHS01 not in (0,1,77,98,99) and EHS01 ne . then EHS01 = .O;
+	if EHS01 = . then EHS01 = .M;
+	
+	if EHS02 not in (1,2,3,4,5,6,77,98,99) and EHS02 ne . then EHS02 = .O;
+	if EHS01 in (0,77,98) and EHS02 = . then EHS02 = .M;
+	else if EHS01 in (0,77,98) and EHS02 ne . then EHS02 = EHS02;
+	else if EHS01 in (1,99) and EHS02 = . then EHS02 = .S;
+	else if EHS01 in (1,99) and EHS02 ne . then EHS02 = .N;
+	else EHS02 = .P;
+
+	if EHS03 not in (1,2,3,4,5,77,98,99) and EHS03 ne . then EHS03 = .O;
+	if EHS01 in (0,77,98) and EHS03 = . then EHS03 = .M;
+	else if EHS01 in (0,77,98) and EHS03 ne . then EHS03 = EHS03;
+	else if EHS01 in (1,99) and EHS03 = . then EHS03 = .S;
+	else if EHS01 in (1,99) and EHS03 ne . then EHS03 = .N;
+	else EHS03 = .P;
+
+	if EHS04 not in (0,1,77,98,99) and EHS04 ne . then EHS04 = .O;
+	if EHS04 = . then EHS04 = .M;
+
+	if EHS04A not in (1,2,3,4,5,6,7,8,9,10,11,77,98,99) and EHS04A ne . then EHS04A = .O;
+	if EHS04 = 1 and EHS04A = . then EHS04A = .M;
+	else if EHS04 = 1 and EHS04A ne . then EHS04A = EHS04A;
+	else if EHS04 in (0,77,98,99) and EHS04A = . then EHS04A = .S;
+	else if EHS04 in (0,77,98,99) and EHS04A ne . then EHS04A = .N;
+	else EHS04A = .P;
+
+	if EHS04A = 11 and EHS04A_n = . then EHS04A_n = .M;
+	else if EHS04A = 11 and EHS04A_n ne . then EHS04A_n = EHS04A_n;
+	else if EHS04A in (1,2,3,4,5,6,7,8,9,10,77,98,99,.S) and EHS04A_n = . then EHS04A_n = .S;
+	else if EHS04A in (1,2,3,4,5,6,7,8,9,10,77,98,99,.S) and EHS04A_n ne . then EHS04A_n = .N;
+	else EHS04A_n = .P;
+
+	if EHS05 not in (0,1,77,98,99) and EHS05 ne . then EHS05 = .O;
+	if EHS01 in (1,98,99) and EHS05 = . then EHS05 = .M;
+	else if EHS01 in (1,98,99) and EHS05 ne . then EHS05 = EHS05;
+	else if EHS01 in (0,77) and EHS05 = . then EHS05 = .S;
+	else if EHS01 in (0,77) and EHS05 ne . then EHS05 = .N;
+	else EHS05 = .P;
+
+	if EHS07 not in (0,1,77,98,99) and EHS07 ne . then EHS07 = .O;
+	if EHS01 in (1,98,99) and EHS07 = . then EHS07 = .M;
+	else if EHS01 in (1,98,99) and EHS07 ne . then EHS07 = EHS07;
+	else if EHS01 in (0,77) and EHS07 = . then EHS07 = .S;
+	else if EHS01 in (0,77) and EHS07 ne . then EHS07 = .N;
+	else EHS07 = .P;
+
+	if EHS08A not in (0,1,77,98,99) and EHS08A ne . then EHS08A = .O;
+	if EHS07 in (1,98,99) and EHS08A = . then EHS08A = .M;
+	else if EHS07 in (1,98,99) and EHS08A ne . then EHS08A = EHS08A;
+	else if EHS07 in (0,77,.S) and EHS08A = . then EHS08A = .S;
+	else if EHS07 in (0,77,.S) and EHS08A ne . then EHS08A = .N;
+	else EHS08A = .P;
+
+	if EHS08B not in (1,2,3,4,5,6,7,8,9,10,11,77,98,99) and EHS08B ne . then EHS08B = .O;
+	if EHS08A in (1,98,99) and EHS08B = . then EHS08B = .M;
+	else if EHS08A in (1,98,99) and EHS08B ne . then EHS08B = EHS08B;
+	else if EHS08A in (0,77,.S) and EHS08B = . then EHS08B = .S;
+	else if EHS08A in (0,77,.S) and EHS08B ne . then EHS08B = .N;
+	else EHS08B = .P;
+
+	if EHS08B = 11 and EHS08B_n = . then EHS08B_n = .M;
+	else if EHS08B = 11 and EHS08B_n ne . then EHS08B_n = EHS08B_n;
+	else if EHS08B in (1,2,3,4,5,6,7,8,9,10,77,98,99,.S) and EHS08B_n = . then EHS08B_n = .S;
+	else if EHS08B in (1,2,3,4,5,6,7,8,9,10,77,98,99,.S) and EHS08B_n ne . then EHS08B_n = .N;
+	else EHS08B_n = .P;
+
+	if EHS09A not in (0,1,77,98,99) and EHS09A ne . then EHS09A = .O;
+	if EHS07 in (1,98,99) and EHS09A = . then EHS09A = .M;
+	else if EHS07 in (1,98,99) and EHS09A ne . then EHS09A = EHS09A;
+	else if EHS07 in (0,77,.S) and EHS09A = . then EHS09A = .S;
+	else if EHS07 in (0,77,.S) and EHS09A ne . then EHS09A = .N;
+	else EHS09A = .P;
+
+	if EHS09B not in (1,2,3,4,5,6,7,8,9,10,11,77,98,99) and EHS09B ne . then EHS09B = .O;
+	if EHS09A in (1,98,99) and EHS09B = . then EHS09B = .M;
+	else if EHS09A in (1,98,99) and EHS09B ne . then EHS09B = EHS09B;
+	else if EHS09A in (0,77,.S) and EHS09B = . then EHS09B = .S;
+	else if EHS09A in (0,77,.S) and EHS09B ne . then EHS09B = .N;
+	else EHS09B = .P;
+
+	if EHS09B = 11 and EHS09B_n = . then EHS09B_n = .M;
+	else if EHS09B = 11 and EHS09B_n ne . then EHS09B_n = EHS09B_n;
+	else if EHS09B in (1,2,3,4,5,6,7,8,9,10,77,98,99,.S) and EHS09B_n = . then EHS09B_n = .S;
+	else if EHS09B in (1,2,3,4,5,6,7,8,9,10,77,98,99,.S) and EHS09B_n ne . then EHS09B_n = .N;
+	else EHS09B_n = .P;
+
+	if ESD10A not in (0,1,77,98,99) and ESD10A ne . then ESD10A = .O;
+	if EHS07 in (1,98,99) and ESD10A = . then ESD10A = .M;
+	else if EHS07 in (1,98,99) and ESD10A ne . then ESD10A = ESD10A;
+	else if EHS07 in (0,77,.S) and ESD10A = . then ESD10A = .S;
+	else if EHS07 in (0,77,.S) and ESD10A ne . then ESD10A = .N;
+	else ESD10A = .P;
+
+	if EHS10B not in (1,2,3,4,5,6,7,8,9,10,11,77,98,99) and EHS10B ne . then EHS10B = .O;
+	if ESD10A in (1,98,99) and EHS10B = . then EHS10B = .M;
+	else if ESD10A in (1,98,99) and EHS10B ne . then EHS10B = EHS09B;
+	else if ESD10A in (0,77,.S) and EHS10B = . then EHS10B = .S;
+	else if ESD10A in (0,77,.S) and EHS10B ne . then EHS10B = .N;
+	else EHS10B = .P;
+
+	if EHS10B = 11 and EHS10B_n = . then EHS10B_n = .M;
+	else if EHS10B = 11 and EHS10B_n ne . then EHS10B_n = EHS10B_n;
+	else if EHS10B in (1,2,3,4,5,6,7,8,9,10,77,98,99,.S) and EHS10B_n = . then EHS10B_n = .S;
+	else if EHS10B in (1,2,3,4,5,6,7,8,9,10,77,98,99,.S) and EHS10B_n ne . then EHS10B_n = .N;
+	else EHS10B_n = .P;
+
+	if EHS11A not in (0,1,77,98,99) and EHS11A ne . then EHS11A = .O;
+	if EHS07 in (1,98,99) and EHS11A = . then EHS11A = .M;
+	else if EHS07 in (1,98,99) and EHS11A ne . then EHS11A = EHS11A;
+	else if EHS07 in (0,77,.S) and EHS11A = . then EHS11A = .S;
+	else if EHS07 in (0,77,.S) and EHS11A ne . then EHS11A = .N;
+	else EHS11A = .P;
+
+	if EHS11B not in (1,2,3,4,5,6,7,8,9,10,11,77,98,99) and EHS11B ne . then EHS11B = .O;
+	if EHS11A in (1,98,99) and EHS11B = . then EHS11B = .M;
+	else if EHS11A in (1,98,99) and EHS11B ne . then EHS11B = EHS11B;
+	else if EHS11A in (0,77,.S) and EHS11B = . then EHS11B = .S;
+	else if EHS11A in (0,77,.S) and EHS11B ne . then EHS11B = .N;
+	else EHS11B = .P;
+
+	if EHS11B = 11 and EHS11B_n = . then EHS11B_n = .M;
+	else if EHS11B = 11 and EHS11B_n ne . then EHS11B_n = EHS11B_n;
+	else if EHS11B in (1,2,3,4,5,6,7,8,9,10,77,98,99,.S) and EHS11B_n = . then EHS11B_n = .S;
+	else if EHS11B in (1,2,3,4,5,6,7,8,9,10,77,98,99,.S) and EHS11B_n ne . then EHS11B_n = .N;
+	else EHS11B_n = .P;
+
+	if EHS12 not in (1,2,3,4,5,6,77,98,99) and EHS12 ne . then EHS12 = .O;
+	if EHS01 in (1,98,99) and EHS12 = . then EHS12 = .M;
+	else if EHS01 in (1,98,99) and EHS12 ne . then EHS12 = EHS12;
+	else if EHS01 in (0,77) and EHS12 = . then EHS12 = .S;
+	else if EHS01 in (0,77) and EHS12 ne . then EHS12 = .N;
+	else EHS12 = .P;
+***************;
+	/*
+	if EHS12 = 6 and EHS12_s = "" then EHS12_s = "M";
+	else if EHS12 = 6 and EHS12_s ne "" then EHS12_s = EHS12_s;
+	else if EHS12 in (1,2,3,4,5,77,98,99,.S) and EHS12_s = "" then EHS12_s = "S";
+	else if EHS12 in (1,2,3,4,5,77,98,99,.S) and EHS12_s ne "" then EHS12_s = "N";
+	else EHS12_s = "P";*/
+
+	if EHS12 = 6 and EHS12_s = "" then EHS12_s_n = .M;
+	else if EHS12 = 6 and EHS12_s ne "" then EHS12_s_n = .F;
+	else if EHS12 in (1,2,3,4,5,77,98,99,.S) and EHS12_s = "" then EHS12_s_n = .S;
+	else if EHS12 in (1,2,3,4,5,77,98,99,.S) and EHS12_s ne "" then EHS12_s_n = .N;
+	else EHS12_s_n = .P;
+************;
+	if EHS13 not in (1,2,3,4,5,6,77,98,99) and EHS13 ne . then EHS13 = .O;
+	if EHS01 in (1,98,99) and EHS13 = . then EHS13 = .M;
+	else if EHS01 in (1,98,99) and EHS13 ne . then EHS13 = EHS13;
+	else if EHS01 in (0,77) and EHS13 = . then EHS13 = .S;
+	else if EHS01 in (0,77) and EHS13 ne . then EHS13 = .N;
+	else EHS13 = .P;
+
+	if EHS14 not in (1,2,3,4,5,6,77,98,99) and EHS14 ne . then EHS14 = .O;
+	if EHS01 in (1,98,99) and EHS14 = . then EHS14 = .M;
+	else if EHS01 in (1,98,99) and EHS14 ne . then EHS14 = EHS14;
+	else if EHS01 in (0,77) and EHS14 = . then EHS14 = .S;
+	else if EHS01 in (0,77) and EHS14 ne . then EHS14 = .N;
+	else EHS14 = .P;
+
+	if EHS15 not in (0,1,2,3,4,5,6,7,8,9,10,11,66,77,98,99) and EHS15 ne . then EHS15 = .O;
+	if EHS01 in (1,98,99) and EHS15 = . then EHS15 = .M;
+	else if EHS01 in (1,98,99) and EHS15 ne . then EHS15 = EHS15;
+	else if EHS01 in (0,77) and EHS15 = . then EHS15 = .S;
+	else if EHS01 in (0,77) and EHS15 ne . then EHS15 = .N;
+	else EHS15 = .P;
+
+	if EHS15 = 11 and EHS15_n = . then EHS15_n = .M;
+	else if EHS15 = 11 and EHS15_n ne . then EHS15_n = EHS15_n;
+	else if EHS15 in (0,1,2,3,4,5,6,7,8,9,10,66,77,98,99,.S) and EHS15_n = . then EHS15_n = .S;
+	else if EHS15 in (0,1,2,3,4,5,6,7,8,9,10,66,77,98,99,.S) and EHS15_n ne . then EHS15_n = .N;
+	else EHS15_n = .P;
+
+run;
+
+data O4_OH_BEHAVIOR_skp;
+	set O4_OH_BEHAVIOR;
+	if EBE01 not in (0,1,2,3,4,5,6,7,8,9,10,11,77,98,99) and EBE01 ne . then EBE01 = .O;
+	if EBE01 = . then EBE01 = .M;
+
+	if EBE01 = 11 and EBE01_n = . then EBE01_n = .M;
+	else if EBE01 = 11 and EBE01_n ne . then EBE01_n = EBE01_n;
+	else if EBE01 in (0,1,2,3,4,5,6,7,8,9,10,77,98,99) and EBE01_n = . then EBE01_n = .S;
+	else if EBE01 in (0,1,2,3,4,5,6,7,8,9,10,77,98,99) and EBE01_n ne . then EBE01_n = .N;
+	else EBE01_n = .P;
+
+	if ESD03_y not in (0,1) and ESD03_y ne . then ESD03_y = .O;
+	if ESD03_y = . then ESD03_y = .M;
+
+	if EBE03 not in (0,1,2,3,4,77,98,99) and EBE03 ne . then EBE03 = .O;
+	if ESD03_y = 0 and EBE03 = . then EBE03 = .M;
+	else if ESD03_y = 0 and EBE03 ne . then EBE03 = EBE03;
+	else if ESD03_y = 1 and EBE03 = . then EBE03 = .S;
+	else if ESD03_y = 1 and EBE03 ne . then EBE03 = .N;
+	else EBE03 = .P;
+
+	if EBE03A not in (0,1,2,3,4,77,98,99) and EBE03A ne . then EBE03A = .O;
+	if ESD03_y = 1 and EBE03A = . then EBE03A = .M;
+	else if ESD03_y = 1 and EBE03A ne . then EBE03A = EBE03A;
+	else if ESD03_y = 0 and EBE03A = . then EBE03A = .S;
+	else if ESD03_y = 0 and EBE03A ne . then EBE03A = .N;
+	else EBE03A = .P;
+
+	if EBE04 not in (0,1,2,77,98,99) and EBE04 ne . then EBE04 = .O;
+	if (EBE03 in (1,2,3,4,77,98,99) or EBE03A in (1,2,3,4,77,98,99)) and EBE04 = . then EBE04 = .M;
+	else if (EBE03 in (1,2,3,4,77,98,99) or EBE03A in (1,2,3,4,77,98,99)) and EBE04 ne . then EBE04 = EBE04;
+	else if (EBE03 = 0 or EBE03A = 0) and EBE04 = . then EBE04 = .S;
+	else if (EBE03 = 0 or EBE03A = 0) and EBE04 ne . then EBE04 = .N;
+	else EBE04 = .P;
+
+	if EBE05A not in (0,1,2,3,77,98,99) and EBE05A ne . then EBE05A = .O;
+	if (EBE03 in (1,2,3,4,77,98,99) or EBE03A in (1,2,3,4,77,98,99)) and ESD03_y = 0 and EBE05A = . then EBE05A = .M;
+	else if (EBE03 in (1,2,3,4,77,98,99) or EBE03A in (1,2,3,4,77,98,99)) and ESD03_y = 0 and EBE05A ne . then EBE05A = EBE05A;
+	else if (EBE03 = 0 or EBE03A = 0) or ESD03_y = 1 and EBE05A = . then EBE05A = .S;
+	else if (EBE03 = 0 or EBE03A = 0) or ESD03_y = 1 and EBE05A ne . then EBE05A = .N;
+	else EBE05A = .P;
+
+	if EBE05B not in (0,1,2,3,77,98,99) and EBE05B ne . then EBE05B = .O;
+	if (EBE03 in (1,2,3,4,77,98,99) or EBE03A in (1,2,3,4,77,98,99)) and ESD03_y = 1 and EBE05B = . then EBE05B = .M;
+	else if (EBE03 in (1,2,3,4,77,98,99) or EBE03A in (1,2,3,4,77,98,99)) and ESD03_y = 1 and EBE05B ne . then EBE05B = EBE05B;
+	else if (EBE03 = 0 or EBE03A = 0) or ESD03_y = 0 and EBE05B = . then EBE05B = .S;
+	else if (EBE03 = 0 or EBE03A = 0) or ESD03_y = 0 and EBE05B ne . then EBE05B = .N;
+	else EBE05B = .P;
+
+	if EBE06 not in (0,1,2,3,77,98,99) and EBE06 ne . then EBE06 = .O;
+	if (EBE03 in (1,2,3,4,77,98,99) or EBE03A in (1,2,3,4,77,98,99)) and (EBE05A in (1,2,3,77,98,99) or EBE05B in (1,2,3,77,98,99)) and EBE06 = . then EBE06 = .M;
+	else if (EBE03 in (1,2,3,4,77,98,99) or EBE03A in (1,2,3,4,77,98,99)) and (EBE05A in (1,2,3,77,98,99) or EBE05B in (1,2,3,77,98,99)) and EBE06 ne . then EBE06 = EBE06;
+	else if (EBE03 = 0 or EBE03A = 0 or EBE05A = 0 or EBE05B = 0) and EBE06 = . then EBE06 = .S;
+	else if (EBE03 = 0 or EBE03A = 0 or EBE05A = 0 or EBE05B = 0) and EBE06 ne . then EBE06 = .N;
+	else EBE06 = .P;
+
+	if EBE07 not in (0,1,2,3,77,98,99) and EBE07 ne . then EBE07 = .O;
+	if (EBE03 in (1,2,3,4,77,98,99) or EBE03A in (1,2,3,4,77,98,99)) and EBE07 = . then EBE07 = .M;
+	else if (EBE03 in (1,2,3,4,77,98,99) or EBE03A in (1,2,3,4,77,98,99)) and EBE07 ne . then EBE07 = EBE07;
+	else if (EBE03 = 0 or EBE03A = 0) and EBE07 = . then EBE07 = .S;
+	else if (EBE03 = 0 or EBE03A = 0) and EBE07 ne . then EBE07 = .N;
+	else EBE07 = .P;
+
+	if EBE08A not in (0,1,2,3,4,5,6,77,98,99) and EBE08A ne . then EBE08A = .O;
+	if EBE08A = . then EBE08A = .M;
+
+	if EBE08B not in (0,1,2,3,4,5,6,77,98,99) and EBE08B ne . then EBE08B = .O;
+	if EBE08B = . then EBE08B = .M;
+
+	if EBE02 not in (0,1,2,3,4,5,6,7,8,9,10,77,98,99) and EBE02 ne . then EBE02 = .O;
+	if EBE02 = . then EBE02 = .M;
+**************************;
+	/*
+	if EBE02 = 10 and EBE02A_s = "" then EBE02A_s = "M";
+	else if EBE02 = 10 and EBE02A_s ne "" then EBE02A_s = EBE02A_s;
+	else if EBE02 in (0,1,2,3,4,5,6,7,8,9,77,98,99) and EBE02A_s = "" then EBE02A_s = "S";
+	else if EBE02 in (0,1,2,3,4,5,6,7,8,9,77,98,99) and EBE02A_s ne "" then EBE02A_s = "N";
+	else EBE02A_s = "P";*/
+
+	if EBE02 = 10 and EBE02A_s = "" then EBE02A_s_n = .M;
+	else if EBE02 = 10 and EBE02A_s ne "" then EBE02A_s_n = .F;
+	else if EBE02 in (0,1,2,3,4,5,6,7,8,9,77,98,99) and EBE02A_s = "" then EBE02A_s_n = .S;
+	else if EBE02 in (0,1,2,3,4,5,6,7,8,9,77,98,99) and EBE02A_s ne "" then EBE02A_s_n = .N;
+	else EBE02A_s_n = .P;
+****************************;
+	if OBE09 not in (0,1,77,98,99) and OBE09 ne . then OBE09 = .O;
+	if OBE09 = . then OBE09 = .M;
+
+	if OBE10 not in (0,1,2,3,77,98,99) and OBE10 ne . then OBE10 = .O;
+	if OBE09 in (0,77,98,99) and OBE10 = . then OBE10 = .M;
+	else if OBE09 in (0,77,98,99) and OBE10 ne . then OBE10 = OBE10;
+	else if OBE09 = 1 and OBE10 = . then OBE10 = .S;
+	else if OBE09 = 1 and OBE10 ne . then OBE10 = .N;
+	else OBE10 = .P;
+
+	if OBE11 not in (0,1,3,77,98,99) and OBE11 ne . then OBE11 = .O;
+	if OBE11 = . then OBE11 = .M;
+
+	if OBE12 not in (0,1,2,3,77,98,99) and OBE12 ne . then OBE12 = .O;
+	if OBE12 =. then OBE12 = .M;
+run;
+
+data O5_OH_KNOWLEDGE_I_skp;
+	set O5_OH_KNOWLEDGE_I;
+	if EKN01X not in (0,1,77,98,99) and EKN01X ne . then EKN01X = .O;
+	if EKN01X = . then EKN01X = .M;
+
+	if EKN02X not in (0,1,77,98,99) and EKN02X ne . then EKN02X = .O;
+	if EKN02X = . then EKN02X = .M;
+
+	if EKN04X not in (0,1,77,98,99) and EKN04X ne . then EKN04X = .O;
+	if EKN04X = . then EKN04X = .M;
+
+	if EKN05X not in (0,1,77,98,99) and EKN05X ne . then EKN05X = .O;
+	if EKN05X = . then EKN05X = .M;
+
+	if EKN03X not in (1,2,3,77,98,99) and EKN03X ne . then EKN03X = .O;
+	if EKN03X = . then EKN03X = .M;
+
+	if EKN07XA not in (1,2,3,77,98,99) and EKN07XA ne . then EKN07XA = .O;
+	if EKN07XA = . then EKN07XA = .M;
+
+	if OKN05 not in (1,2,3,77,98,99) and OKN05 ne . then OKN05 = .O;
+	if OKN05 = . then OKN05 = .M;
+
+	if EKN10X not in (1,2,3,77,98,99) and EKN10X ne . then EKN10X = .O;
+	if EKN10X = . then EKN10X = .M;
+
+	if EKN08XA not in (1,2,3,77,98,99) and EKN08XA ne . then EKN08XA = .O;
+	if EKN08XA = . then EKN08XA = .M;
+
+	if OKN08 not in (1,2,3,77,98,99) and OKN08 ne . then OKN08 = .O;
+	if OKN08 = . then OKN08 = .M;
+
+	if EKN12 not in (1,2,3,77,98,99) and EKN12 ne . then EKN12 = .O;
+	if EKN12 = . then EKN12 = .M;
+
+	if EKN08XB not in (1,2,3,77,98,99) and EKN08XB ne . then EKN08XB = .O;
+	if EKN08XB = . then EKN08XB = .M;
+
+	if EKN11 not in (1,2,3,77,98,99) and EKN11 ne . then EKN11 = .O;
+	if EKN11 = . then EKN11 = .M;
+
+	if EKN07XB not in (1,2,3,77,98,99) and EKN07XB ne . then EKN07XB = .O;
+	if EKN07XB = . then EKN07XB = .M;
+
+	if OKN06 not in (1,2,3,77,98,99) and OKN06 ne . then OKN06 = .O;
+	if OKN06 = . then OKN06 = .M;
+
+	if OKN07 not in (1,2,3,77,98,99) and OKN07 ne . then OKN07 = .O;
+	if OKN07 = . then OKN07 = .M;
+
+	if OKN09 not in (1,2,3,77,98,99) and OKN09 ne . then OKN09 = .O;
+	if OKN09 = . then OKN09 = .M;
+
+	if EKN09N not in (1,2,3,4,5,6,7,77,98,99) and EKN09N ne . then EKN09N = .O;
+	if EKN09N = . then EKN09N = .M;
+
+	if OKN04N not in (1,2,3,4,5,6,77,98,99) and OKN04N ne . then OKN04N = .O;
+	if OKN04N = . then OKN04N = .M;
+
+	if OKN02N not in (1,2,3,4,77,98,99) and OKN02N ne . then OKN02N = .O;
+	if OKN02N = . then OKN02N = .M;
+
+	if OKN06_skip not in (0,1) and OKN06_skip ne . then OKN06_skip = .O;
+	if OKN06_skip = . then OKN06_skip = .M;
+
+	if OKN06NA not in (0,1,2,3,77,98,99) and OKN06NA ne . then OKN06NA = .O;
+	if OKN06_skip = 0 and OKN06NA = . then OKN06NA = .M;
+	else if OKN06_skip = 0 and OKN06NA ne . then OKN06NA = OKN06NA;
+	else if OKN06_skip = 1 and OKN06NA = . then OKN06NA = .S;
+	else if OKN06_skip = 1 and OKN06NA ne . then OKN06NA = .N;
+	else OKN06NA = .P;
+
+	if OKN06NB not in (0,1,2,3,77,98,99) and OKN06NB ne . then OKN06NB = .O;
+	if OKN06_skip = 1 and OKN06NB = . then OKN06NB = .M;
+	else if OKN06_skip = 1 and OKN06NB ne . then OKN06NB = OKN06NB;
+	else if OKN06_skip = 0 and OKN06NB = . then OKN06NB = .S;
+	else if OKN06_skip = 0 and OKN06NB ne . then OKN06NB = .N;
+	else OKN06NB = .P;
+
+	if OKN01 not in (0,1,77,98,99) and OKN01 ne . then OKN01 = .O;
+	if OKN01 = . then OKN01 = .M;
+
+	if BUOPT02A not in (0,1,77,98,99) and BUOPT02A ne . then BUOPT02A = .O;
+	if BUOPT02A = . then BUOPT02A = .M;
+
+	if BUOPT02B not in (0,1,77,98,99) and BUOPT02B ne . then BUOPT02B = .O;
+	if BUOPT02B = . then BUOPT02B = .M;
+
+	if BUOPT02C not in (0,1,77,98,99) and BUOPT02C ne . then BUOPT02C = .O;
+	if BUOPT02C = . Then BUOPT02C = .M;
+
+	if BUOPT02D not in (0,1,77,98,99) and BUOPT02D ne . then BUOPT02D = .O;
+	if BUOPT02D = . Then BUOPT02D = .M;
+
+	if BUOPT02E not in (0,1,77,98,99) and BUOPT02E ne . then BUOPT02E = .O;
+	if BUOPT02E = . Then BUOPT02E = .M;
+
+	if BUOPT02F not in (0,1,77,98,99) and BUOPT02F ne . then BUOPT02F = .O;
+	if BUOPT02F = . Then BUOPT02F = .M;
+run;
+
+data O6_MOTIVATION_skp;
+	set O6_MOTIVATION;
+	if OBE03A not in (1,2,3,4,5,77,98,99) and OBE03A ne . then OBE03A = .O;
+	if OBE03A = . then OBE03A = .M;
+
+	if OBE04A not in (1,2,3,4,5,77,98,99) and OBE04A ne . then OBE04A = .O;
+	if OBE04A = . then OBE04A = .M;
+
+	if OBE02A not in (1,2,3,4,5,77,98,99) and OBE02A ne . then OBE02A = .O;
+	if OBE02A = . then OBE02A = .M;
+
+	if OBE03B not in (1,2,3,4,5,77,98,99) and OBE03B ne . then OBE03B = .O;
+	if OBE03B = . then OBE03B = .M;
+
+	if OBE04B not in (1,2,3,4,5,77,98,99) and OBE04B ne . then OBE04B = .O;
+	if OBE04B = . then OBE04B = .M;
+
+	if OBE02B not in (1,2,3,4,5,77,98,99) and OBE02B ne . then OBE02B = .O;
+	if OBE02B = . then OBE02B = .M;
+
+	if OBE03D not in (1,2,3,4,5,77,98,99) and OBE03D ne . then OBE03D = .O;
+	if OBE03D = . then OBE03D = .M;
+
+	if OBE04D not in (1,2,3,4,5,77,98,99) and OBE04D ne . then OBE04D = .O;
+	if OBE04D = . then OBE04D = .M;
+
+	if OBE02D not in (1,2,3,4,5,77,98,99) and OBE02D ne . then OBE02D = .O;
+	if OBE02D = . then OBE02D = .M;
+
+	if OBE03H not in (1,2,3,4,5,77,98,99) and OBE03H ne . then OBE03H = .O;
+	if OBE03H = . then OBE03H = .M;
+
+	if OBE04H not in (1,2,3,4,5,77,98,99) and OBE04H ne . then OBE04H = .O;
+	if OBE04H = . then OBE04H = .M;
+
+	if OBD02H not in (1,2,3,4,5,77,98,99) and OBD02H ne . then OBD02H = .O;
+	if OBD02H = . then OBD02H = .M;
+
+	if OBE03J not in (1,2,3,4,5,77,98,99) and OBE03J ne . then OBE03J = .O;
+	if OBE03J = . then OBE03J = .M;
+
+	if OBD04J not in (1,2,3,4,5,77,98,99) and OBD04J ne . then OBD04J = .O;
+	if OBD04J = . then OBD04J = .M;
+
+	if OBE02J not in (1,2,3,4,5,77,98,99) and OBE02J ne . then OBE02J = .O;
+	if OBE02J = . then OBE02J = .M;
+
+	if OBE03N not in (1,2,3,4,5,77,98,99) and OBE03N ne . then OBE03N = .O;
+	if OBE03N = . then OBE03N = .M;
+
+	if OBD04N not in (1,2,3,4,5,77,98,99) and OBD04N ne . then OBD04N = .O;
+	if OBD04N = . then OBD04N = .M;
+
+	if OBE02N not in (1,2,3,4,5,77,98,99) and OBE02N ne . then OBE02N = .O;
+	if OBE02N = . then OBE02N = .M;
+
+	if OBE03E not in (1,2,3,4,5,77,98,99) and OBE03E ne . then OBE03E = .O;
+	if OBE03E = . then OBE03E = .M;
+
+	if OBE04E not in (1,2,3,4,5,77,98,99) and OBE04E ne . then OBE04E = .O;
+	if OBE04E = . then OBE04E = .M;
+
+	if OBE02E not in (1,2,3,4,5,77,98,99) and OBE02E ne . then OBE02E = .O;
+	if OBE02E = . then OBE02E = .M;
+
+	if OBE03K not in (1,2,3,4,5,77,98,99) and OBE03K ne . then OBE03K = .O;
+	if OBE03K = . then OBE03K = .M;
+
+	if OBE04K not in (1,2,3,4,5,77,98,99) and OBE04K ne . then OBE04K = .O;
+	if OBE04K = . then OBE04K = .M;
+
+	if OBE02K not in (1,2,3,4,5,77,98,99) and OBE02K ne . then OBE02K = .O;
+	if OBE02K = . then OBE02K = .M;
+
+	if OBE03L not in (1,2,3,4,5,77,98,99) and OBE03L ne . then OBE03L = .O;
+	if OBE03L = . then OBE03L = .M;
+
+	if OBE04L not in (1,2,3,4,5,77,98,99) and OBE04L ne . then OBE04L = .O;
+	if OBE04L = . then OBE04L = .M;
+
+	if OBE02L not in (1,2,3,4,5,77,98,99) and OBE02L ne . then OBE02L = .O;
+	if OBE02L = . then OBE02L = .M;
+
+	if OBE03M not in (1,2,3,4,5,77,98,99) and OBE03M ne . then OBE03M = .O;
+	if OBE03M = . then OBE03M = .M;
+
+	if OBE04M not in (1,2,3,4,5,77,98,99) and OBE04M ne . then OBE04M = .O;
+	if OBE04M = . then OBE04M = .M;
+
+	if OBE02M not in (1,2,3,4,5,77,98,99) and OBE02M ne . then OBE02M = .O;
+	if OBE02M = . then OBE02M = .M;
+
+	if OBE03C not in (1,2,3,4,5,77,98,99) and OBE03C ne . then OBE03C = .O;
+	if OBE03C = . then OBE03C = .M;
+
+	if OBE04C not in (1,2,3,4,5,77,98,99) and OBE04C ne . then OBE04C = .O;
+	if OBE04C = . then OBE04C = .M;
+
+	if OBE02C not in (1,2,3,4,5,77,98,99) and OBE02C ne . then OBE02C = .O;
+	if OBE02C = . then OBE02C = .M;
+
+	if OBE03F not in (1,2,3,4,5,77,98,99) and OBE03F ne . then OBE03F = .O;
+	if OBE03F = . then OBE03F = .M;
+
+	if OBE04F not in (1,2,3,4,5,77,98,99) and OBE04F ne . then OBE04F = .O;
+	if OBE04F = . then OBE04F = .M;
+
+	if OBE02F not in (1,2,3,4,5,77,98,99) and OBE02F ne . then OBE02F = .O;
+	if OBE02F = . then OBE02F = .M;
+run;
+
+data O7_OH_KNOWLEDGE_II_skp;
+	set O7_OH_KNOWLEDGE_II;
+	if OHB01 not in (1,2,3,4,5,77,98,99) and OHB01 ne . then OHB01 = .O;
+	if OHB01 = . then OHB01 = .M;
+
+	if OHB09 not in (1,2,3,4,5,77,98,99) and OHB09 ne . then OHB09 = .O;
+	if OHB09 = . then OHB09 = .M;
+
+	if OHB10 not in (1,2,3,4,5,77,98,99) and OHB10 ne . then OHB10 = .O;
+	if OHB10 = . then OHB10 = .M;
+
+	if OHB05 not in (1,2,3,4,5,77,98,99) and OHB05 ne . then OHB05 = .O;
+	if OHB05 = . then OHB05 = .M;
+
+	if OHB02 not in (1,2,3,4,5,77,98,99) and OHB02 ne . then OHB02 = .O;
+	if OHB02 = . then OHB02 = .M;
+
+	if OHB11 not in (1,2,3,4,5,77,98,99) and OHB11 ne . then OHB11 = .O;
+	if OHB11 = . then OHB11 = .M;
+
+	if OHB06 not in (1,2,3,4,5,77,98,99) and OHB06 ne . then OHB06 = .O;
+	if OHB06 = . then OHB06 = .M;
+
+	if OHB03 not in (1,2,3,4,5,77,98,99) and OHB03 ne . then OHB03 = .O;
+	if OHB03 = . then OHB03 = .M;
+
+	if OHB12 not in (1,2,3,4,5,77,98,99) and OHB12 ne . then OHB12 = .O;
+	if OHB12 = . then OHB12 = .M;
+
+	if S1HB20 not in (1,2,3,4,5,77,98,99) and S1HB20 ne . then S1HB20 = .O;
+	if S1HB20 = . then S1HB20 = .M;
+
+	if OHB08 not in (1,2,3,4,5,77,98,99) and OHB08 ne . then OHB08 = .O;
+	if OHB08 = . then OHB08 = .M;
+
+	if OHB04 not in (1,2,3,4,5,77,98,99) and OHB04 ne . then OHB04 = .O;
+	if OHB04 = . then OHB04 = .M;
+
+	if OHB13 not in (1,2,3,4,5,77,98,99) and OHB13 ne . then OHB13 = .O;
+	if OHB13 = . then OHB13 = .M;
+
+	if OHB14 not in (1,2,3,4,5,77,98,99) and OHB14 ne . then OHB14 = .O;
+	if OHB14 = . then OHB14 = .M;
+
+	if OHB15 not in (1,2,3,4,5,77,98,99) and OHB15 ne . then OHB15 = .O;
+	if OHB15 = . then OHB15 = .M;
+
+	if OHB16 not in (1,2,3,4,5,77,98,99) and OHB16 ne . then OHB16 = .O;
+	if OHB16 = . then OHB16 = .M;
+
+	if OHB17 not in (1,2,3,4,5,77,98,99) and OHB17 ne . then OHB17 = .O;
+	if OHB17 = . then OHB17 = .M;
+
+	if OHB07A not in (1,2,3,4,5,77,98,99) and OHB07A ne . then OHB07A = .O;
+	if OHB07A = . then OHB07A = .M;
+
+	if OHB07B not in (1,2,3,4,5,77,98,99) and OHB07B ne . then OHB07B = .O;
+	if OHB07B = . then OHB07B = .M;
+
+	if OHB07C not in (1,2,3,4,5,77,98,99) and OHB07C ne . then OHB07C = .O;
+	if OHB07C = . then OHB07C = .M;
+
+	if OHB07D not in (1,2,3,4,5,77,98,99) and OHB07D ne . then OHB07D = .O;
+	if OHB07D = . then OHB07D = .M;
+
+	if OHB07E not in (1,2,3,4,5,77,98,99) and OHB07E ne . then OHB07E = .O;
+	if OHB07E = . then OHB07E = .M;
+
+	if OHB18A not in (1,2,3,4,5,77,98,99) and OHB18A ne . then OHB18A = .O;
+	if OHB18A = . then OHB18A = .M;
+
+	if OHB18B not in (1,2,3,4,5,77,98,99) and OHB18B ne . then OHB18B = .O;
+	if OHB18B = . then OHB18B = .M;
+
+	if OHB18C not in (1,2,3,4,5,77,98,99) and OHB18C ne . then OHB18C = .O;
+	if OHB18C = . then OHB18C = .M;
+
+	if OHB18D not in (1,2,3,4,5,77,98,99) and OHB18D ne . then OHB18D = .O;
+	if OHB18D = . then OHB18D = .M;
+
+	if OHB18E not in (1,2,3,4,5,77,98,99) and OHB18E ne . then OHB18E = .O;
+	if OHB18E = . then OHB18E = .M;
+
+	if OHB18F not in (1,2,3,4,5,77,98,99) and OHB18F ne . then OHB18F = .O;
+	if OHB18F = . then OHB18F = .M;
+
+	if OHB18G not in (1,2,3,4,5,77,98,99) and OHB18G ne . then OHB18G = .O;
+	if OHB18G = . then OHB18G = .M;
+
+	if OHB18H not in (1,2,3,4,5,77,98,99) and OHB18H ne . then OHB18H = .O;
+	if OHB18H = . then OHB18H = .M;
+
+	if OHB18I not in (1,2,3,4,5,77,98,99) and OHB18I ne . then OHB18I = .O;
+	if OHB18I = . then OHB18I = .M;
+
+	if OHB18J not in (1,2,3,4,5,77,98,99) and OHB18J ne . then OHB18J = .O;
+	if OHB18J = . then OHB18J = .M;
+
+	if OHB18K not in (1,2,3,4,5,77,98,99) and OHB18K ne . then OHB18K = .O;
+	if OHB18K = . then OHB18K = .M;
+
+	if OHB18L not in (1,2,3,4,5,77,98,99) and OHB18L ne . then OHB18L = .O;
+	if OHB18L = . then OHB18L = .M;
+
+	if OHB18M not in (1,2,3,4,5,77,98,99) and OHB18M ne . then OHB18M = .O;
+	if OHB18M = . then OHB18M = .M;
+
+	if OHB18N not in (1,2,3,4,5,77,98,99) and OHB18N ne . then OHB18N = .O;
+	if OHB18N = . then OHB18N = .M;
+
+	if OHB18O not in (1,2,3,4,5,77,98,99) and OHB18O ne . then OHB18O = .O;
+	if OHB18O = . then OHB18O = .M;
+
+	if OHB18P not in (1,2,3,4,5,77,98,99) and OHB18P ne . then OHB18P = .O;
+	if OHB18P = . then OHB18P = .M;
+run;
+
+data O8_CAREGIVER_HEALTH_skp;
+	set O8_CAREGIVER_HEALTH;
+	if OST01 not in (1,2,3,4,5,77,98,99) and OST01 ne . then OST01 = .O;
+	if OST01 = . then OST01 = .M;
+
+	if OST02 not in (1,2,3,4,5,77,98,99) and OST02 ne . then OST02 = .O;
+	if OST02 = . then OST02 = .M;
+
+	if OHS01 not in (1,2,3,4,77,98,99) and OHS01 ne . then OHS01 = .O;
+	if OHS01 = . then OHS01 = .M;
+
+	if OBE01 not in (0,1,2,3,4,77,98,99) and OBE01 ne . then OBE01 = .O;
+	if OBE01 = . then OBE01 = .M;
+
+	if ESD03 not in (0,1,2,3,4,77,98,99) and ESD03 ne . then ESD03 = .O;
+	if ESD03 = . then ESD03 = .M;
+****************************;
+	if BRFQVisit = "B" then visit_indc = 0;
+	else if BRFQVisit = "V12" then visit_indc = 1;
+	else if BRFQVisit = "V24" then visit_indc = 2;
+	else if BRFQVisit = "" and Form = "O8-Caregiver Health V4" then visit_indc = .S;
+	else if BRFQVisit = "" and Form = "O8-Caregiver Health V5" then visit_indc = .M;
+	else visit_indc = .O;
+
+	if Day_1 = 1 then do;
+		if Form = "O8-Caregiver Health V5" then do;
+			if BRFQVisit = "B" then Visit_err = 0;
+			else Visit_err = 1;
+		end;
+		else Visit_err = 0;
+	end;
+	else if Day_1 = 366 then do;
+		if Form = "O8-Caregiver Health V5" then do;
+			if BRFQVisit = "V12" then Visit_err = 0;
+			else Visit_err = 1;
+		end;
+		else Visit_err = 0;
+	end;
+	else do;
+		if Form = "O8-Caregiver Health V5" then do;
+			if BRFQVisit = "V24" then Visit_err = 0;
+			else Visti_err = 1;
+		end;
+		else Visit_err = 0;
+	end;
+
+	if Visit_err = 1 then Visit_err = .P;
+	else Visit_err = Visit_err;
+**************************;	
+	if ESD03A not in (1,2,3,4,77,98,99) and ESD03A ne . then ESD03A = .O;
+	if Day_1 = 1 and ESD03A = . then ESD03A = .M;
+	else if Day_1 = 1 and ESD03A ne . then ESD03A = ESD03A;
+	else if Day_1 ne 1 and ESD03A = . then ESD03A = .S;
+	else if Day_1 ne 1 and ESD03A ne . then ESD03A = .N;
+	else ESD03A = .P;
+
+	if OSD02MOS1 not in (1,2,3,4,5,77,98,99) and OSD02MOS1 ne . then OSD02MOS1 = .O;
+	if ESD03A in (1,2,3,77,98,99) and OSD02MOS1 = . then OSD02MOS1 = .M;
+	else if ESD03A in (1,2,3,77,98,99) and OSD02MOS1 ne . then OSD02MOS1 = OSD02MOS1;
+	else if ESD03A in (4,.S) and OSD02MOS1 = . then OSD02MOS1 = .S;
+	else if ESD03A in (4,.S) and OSD02MOS1 ne . then OSD02MOS1 = .N;
+	else OSD02MOS1 = .P;
+
+	if OSD02AOS2 not in (1,2,3,4,5,77,98,99) and OSD02AOS2 ne . then OSD02AOS2 = .O;
+	if ESD03A in (1,2,3,77,98,99) and OSD02AOS2 = . then OSD02AOS2 = .M;
+	else if ESD03A in (1,2,3,77,98,99) and OSD02AOS2 ne . then OSD02AOS2 = OSD02AOS2;
+	else if ESD03A in (4,.S) and OSD02AOS2 = . then OSD02AOS2 = .S;
+	else if ESD03A in (4,.S) and OSD02AOS2 ne . then OSD02AOS2 = .N;
+	else OSD02AOS2 = .P;
+
+	if OSD02MOS3 not in (1,2,3,4,5,77,98,99) and OSD02MOS3 ne . then OSD02MOS3 = .O;
+	if ESD03A in (1,2,3,77,98,99) and OSD02MOS3 = . then OSD02MOS3 = .M;
+	else if ESD03A in (1,2,3,77,98,99) and OSD02MOS3 ne . then OSD02MOS3 = OSD02MOS3;
+	else if ESD03A in (4,.S) and OSD02MOS3 = . then OSD02MOS3 = .S;
+	else if ESD03A in (4,.S) and OSD02MOS3 ne . then OSD02MOS3 = .N;
+	else OSD02MOS3 = .P;
+
+	if OSD02AOS4 not in (1,2,3,4,5,77,98,99) and OSD02AOS4 ne . then OSD02AOS4 = .O;
+	if ESD03A in (1,2,3,77,98,99) and OSD02AOS4 = . then OSD02AOS4 = .M;
+	else if ESD03A in (1,2,3,77,98,99) and OSD02AOS4 ne . then OSD02AOS4 = OSD02AOS4;
+	else if ESD03A in (4,.S) and OSD02AOS4 = . then OSD02AOS4 = .S;
+	else if ESD03A in (4,.S) and OSD02AOS4 ne . then OSD02AOS4 = .N;
+	else OSD02AOS4 = .P;
+
+	if OSD02AOS5 not in (1,2,3,4,5,77,98,99) and OSD02AOS5 ne . then OSD02AOS5 = .O;
+	if ESD03A in (1,2,3,77,98,99) and OSD02AOS5 = . then OSD02AOS5 = .M;
+	else if ESD03A in (1,2,3,77,98,99) and OSD02AOS5 ne . then OSD02AOS5 = OSD02AOS5;
+	else if ESD03A in (4,.S) and OSD02AOS5 = . then OSD02AOS5 = .S;
+	else if ESD03A in (4,.S) and OSD02AOS5 ne . then OSD02AOS5 = .N;
+	else OSD02AOS5 = .P;
+
+	if OSD02MOS6 not in (1,2,3,4,5,77,98,99) and OSD02MOS6 ne . then OSD02MOS6 = .O;
+	if ESD03A in (1,2,3,77,98,99) and OSD02MOS6 = . then OSD02MOS6 = .M;
+	else if ESD03A in (1,2,3,77,98,99) and OSD02MOS6 ne . then OSD02MOS6 = OSD02MOS6;
+	else if ESD03A in (4,.S) and OSD02MOS6 = . then OSD02MOS6 = .S;
+	else if ESD03A in (4,.S) and OSD02MOS6 ne . then OSD02MOS6 = .N;
+	else OSD02MOS6 = .P;
+
+	if OSD02MOS7 not in (1,2,3,4,5,77,98,99) and OSD02MOS7 ne . then OSD02MOS7 = .O;
+	if ESD03A in (1,2,3,77,98,99) and OSD02MOS7 = . then OSD02MOS7 = .M;
+	else if ESD03A in (1,2,3,77,98,99) and OSD02MOS7 ne . then OSD02MOS7 = OSD02MOS7;
+	else if ESD03A in (4,.S) and OSD02MOS7 = . then OSD02MOS7 = .S;
+	else if ESD03A in (4,.S) and OSD02MOS7 ne . then OSD02MOS7 = .N;
+	else OSD02MOS7 = .P;
+
+	if OSD02MOS8 not in (1,2,3,4,5,77,98,99) and OSD02MOS8 ne . then OSD02MOS8 = .O;
+	if ESD03A in (1,2,3,77,98,99) and OSD02MOS8 = . then OSD02MOS8 = .M;
+	else if ESD03A in (1,2,3,77,98,99) and OSD02MOS8 ne . then OSD02MOS8 = OSD02MOS8;
+	else if ESD03A in (4,.S) and OSD02MOS8 = . then OSD02MOS8 = .S;
+	else if ESD03A in (4,.S) and OSD02MOS8 ne . then OSD02MOS8 = .N;
+	else OSD02MOS8 = .P;
+
+	if OSD02AOS9 not in (1,2,3,4,5,77,98,99) and OSD02AOS9 ne . then OSD02AOS9 = .O;
+	if ESD03A in (1,2,3,77,98,99) and OSD02AOS9 = . then OSD02AOS9 = .M;
+	else if ESD03A in (1,2,3,77,98,99) and OSD02AOS9 ne . then OSD02AOS9 = OSD02AOS9;
+	else if ESD03A in (4,.S) and OSD02AOS9 = . then OSD02AOS9 = .S;
+	else if ESD03A in (4,.S) and OSD02AOS9 ne . then OSD02AOS9 = .N;
+	else OSD02AOS9 = .P;
+
+	if OSD02AOS10 not in (1,2,3,4,5,77,98,99) and OSD02AOS10 ne . then OSD02AOS10 = .O;
+	if ESD03A in (1,2,3,77,98,99) and OSD02AOS10 = . then OSD02AOS10 = .M;
+	else if ESD03A in (1,2,3,77,98,99) and OSD02AOS10 ne . then OSD02AOS10 = OSD02AOS10;
+	else if ESD03A in (4,.S) and OSD02AOS10 = . then OSD02AOS10 = .S;
+	else if ESD03A in (4,.S) and OSD02AOS10 ne . then OSD02AOS10 = .N;
+	else OSD02AOS10 = .P;
+
+	if OSD02MOS11 not in (1,2,3,4,5,77,98,99) and OSD02MOS11 ne . then OSD02MOS11 = .O;
+	if ESD03A in (1,2,3,77,98,99) and OSD02MOS11 = . then OSD02MOS11 = .M;
+	else if ESD03A in (1,2,3,77,98,99) and OSD02MOS11 ne . then OSD02MOS11 = OSD02MOS11;
+	else if ESD03A in (4,.S) and OSD02MOS11 = . then OSD02MOS11 = .S;
+	else if ESD03A in (4,.S) and OSD02MOS11 ne . then OSD02MOS11 = .N;
+	else OSD02MOS11 = .P;
+
+	if OSD02AOS12 not in (1,2,3,4,5,77,98,99) and OSD02AOS12 ne . then OSD02AOS12 = .O;
+	if ESD03A in (1,2,3,77,98,99) and OSD02AOS12 = . then OSD02AOS12 = .M;
+	else if ESD03A in (1,2,3,77,98,99) and OSD02AOS12 ne . then OSD02AOS12 = OSD02AOS12;
+	else if ESD03A in (4,.S) and OSD02AOS12 = . then OSD02AOS12 = .S;
+	else if ESD03A in (4,.S) and OSD02AOS12 ne . then OSD02AOS12 = .N;
+	else OSD02AOS12 = .P;
+run;
+
+
+data O9_CAREGIVER_SD_skp;
+	set O9_CAREGIVER_SD;
+
+***********************;
+	if INSTRUCTION_TO_INTERVIEWER__PLEA = "B" then visit_indc = 0;
+	else if INSTRUCTION_TO_INTERVIEWER__PLEA = "V12" then visit_indc = 1;
+	else if INSTRUCTION_TO_INTERVIEWER__PLEA = "V24" then visit_indc = 2;
+	else if INSTRUCTION_TO_INTERVIEWER__PLEA = "" and Form = "O9-Caregiver SD V3" then visit_indc = .S;
+	else if INSTRUCTION_TO_INTERVIEWER__PLEA = "" and Form = "O9-Caregiver SD V4" then visit_indc = .M;
+	else visit_indc = .O;
+***********************;
+
+	if Day_1 = 1 and ESD13 = . and ESD13_77 not in (77,98) then ESD13 = .M;
+	else if Day_1 = 1 and ESD13 ne . and ESD13_77 not in (77,98) then ESD13 = ESD13;
+	else if Day_1 ne 1 and ESD13 = . then ESD13 = .S;
+	else if Day_1 ne 1 and ESD13 ne . then ESD13 = .N;
+	else ESD13 = .P;
+
+	if ESD13_77 not in (77,98,999) and ESD13_77 ne . then ESD13_77 = .O;
+	if Day_1 ne 1 then ESD13_77 = .S;
+	else if Day_1 = 1 and ESD13 in (.M,.S,.N,.P) and ESD13_77 = . then ESD13_77 = .M;
+	else if Day_1 = 1 and ESD13 in (.M,.S,.N,.P) and ESD13_77 ne . then ESD13_77 = ESD13_77;
+	else if Day_1 = 1 and ESD13 not in (.M,.S,.N,.P) and ESD13_77 = . then ESD13_77 = .S;
+	else if Day_1 = 1 and ESD13 not in (.M,.S,.N,.P) and ESD13_77 ne . then ESD13_77 = .N;
+	else ESD13_77 = .P;
+
+	if ESD11 not in (0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,77,98,99) and ESD11 ne . then ESD11 = .O;
+	if Day_1 = 1 and ESD11 = . then ESD11 = .M;
+	else if Day_1 = 1 and ESD11 ne . then ESD11 = ESD11;
+	else if Day_1 ne 1 and ESD11 = . then ESD11 = .S;
+	else if Day_1 ne 1 and ESD11 ne . then ESD11 = .N;
+	else ESD11 = .P;
+
+	if ESD09 not in (1,2,3,4,5,6,7,8,9,77,98,99) and ESD09 ne . then ESD09 = .O;
+	if ESD09 = . then ESD09 = .M;
+
+	if ESD04 not in (1,2,3,4,5,6,7,8,9,10,11,77,98,99) and ESD04 ne . then ESD04 = .O;
+	if ESD04 = . then ESD04 = .M;
+
+	if ESD04 = 11 and ESD04_n = . then ESD04_n = .M;
+	else if ESD04 = 11 and ESD04_n ne . then ESD04_n = ESD04_n;
+	else if ESD04 in (1,2,3,4,5,6,7,8,9,10,77,98,99) and ESD04_n = . then ESD04_n = .S;
+	else if ESD04 in (1,2,3,4,5,6,7,8,9,10,77,98,99) and ESD04_n ne . then ESD04_n = .N;
+	else ESD04_n = .P;
+
+	if OSD07 not in (1,2,3,4,5,6,7,8,9,10,11,77,98,99) and OSD07 ne . then OSD07 = .O;
+	if OSD07 = . then OSD07 = .M;
+
+	if OSD07 = 11 and ESD05_n = . then ESD05_n = .M;
+	else if OSD07 = 11 and ESD05_n ne . then ESD05_n = ESD05_n;
+	else if OSD07 in (1,2,3,4,5,6,7,8,9,10,77,98,99) and ESD05_n = . then ESD05_n = .S;
+	else if OSD07 in (1,2,3,4,5,6,7,8,9,10,77,98,99) and ESD05_n ne . then ESD05_n = .N;
+	else ESD05_n = .P;
+
+	if ESD07 not in (0,1,2,3,4,5,6,7,8,9,10,11,77,98,99) and ESD07 ne . then ESD07 = .O;
+	if ESD07 = . then ESD07 = .M;
+
+	if ESD07 = 11 and OSD07_n = . then OSD07_n = .M;
+	else if ESD07 = 11 and OSD07_n ne . then OSD07_n = OSD07_n;
+	else if ESD07 in (0,1,2,3,4,5,6,7,8,9,10,77,98,99) and OSD07_n = . then OSD07_n = .S;
+	else if ESD07 in (0,1,2,3,4,5,6,7,8,9,10,77,98,99) and OSD07_n ne . then OSD07_n = .N;
+	else OSD07_n = .P;
+
+	if ESD06 not in (0,1,77,98,99) and ESD06 ne . then ESD06 = .O;
+	if ESD06 = . then ESD06 = .M;
+
+	if OSD06A not in (0,1,77,98,99) and OSD06A ne . then OSD06A = .O;
+	if OSD06A = . then OSD06A = .M;
+
+	if OSD06B not in (0,1,77,98,99) and OSD06B ne . then OSD06B = .O;
+	if OSD06B = . then OSD06B = .M;
+
+	if ODS06C not in (0,1,77,98,99) and ODS06C ne . then ODS06C = .O;
+	if ODS06C = . then ODS06C = .M;
+
+	if OSD06D not in (0,1,77,98,99) and OSD06D ne . then OSD06D = .O;
+	if OSD06D = . then OSD06D = .M;
+
+	if BUHS01 not in (0,1,77,98,99) and BUHS01 ne . then BUHS01 = .O;
+	if BUHS01 = . then BUHS01 = .M;
+
+	if BUHS02 not in (0,1,77,98,99) and BUHS02 ne . then BUHS02 = .O;
+	if BUHS02 = . then BUHS02 = .M;
+
+	if BUHS03 not in (0,1,77,98,99) and BUHS03 ne . then BUHS03 = .O;
+	if BUHS03 = . then BUHS03 = .M;
+
+	if BUHS04 not in (0,1,77,98,99) and BUHS04 ne . then BUHS04 = .O;
+	if BUHS04 = . then BUHS04 = .M;
+
+	if BUHS05 not in (0,1,77,98,99) and BUHS05 ne . then BUHS05 = .O;
+	if BUHS05 = . then BUHS05 = .M;
+
+	if BUHS06 not in (0,1,77,98,99) and BUHS06 ne . then BUHS06 = .O;
+	if BUHS06 = . then BUHS06 = .M;
+
+	if BUHS07 not in (0,1,77,98,99) and BUHS07 ne . then BUHS07 = .O;
+	if BUHS07 = . then BUHS07 = .M;
+
+	if BUHS08 not in (0,1,77,98,99) and BUHS08 ne . then BUHS08 = .O;
+	if BUHS08 = . then BUHS08 = .M;
+
+	if BUHS09 not in (0,1,77,98,99) and BUHS09 ne . then BUHS09 = .O;
+	if BUHS09 = . then BUHS09 = .M;
+run;
+
+*These datasets from VarsO1 to VarsO9 serve to reserve the order of the questionnaire items in the report;
+data VarsO1;
+	infile datalines dlm=',';
+	length VarNo $7 VarCode $50;
+	input VarNo $ VarCode $ @@;
+	Order = _n_;
+datalines;
+1.,ESD07_c
+2.,ESD07A
+2a.,ESD07Fc_s
+2b.,ESD07Fs_s
+2c.,ESD07G_s
+2d.,ESD07H_s
+3.,ESD08
+3a.,ESD08_s
+3b.,ESD08F
+3b_1.,ESD08F_s
+3c.,ESD08G
+3c_1.,ESD08G_s
+4.,ESD10_c
+4a.,ESD10_s
+;
+run;
+
+data VarsO2;
+	infile datalines dlm=',';
+	length VarNo $7 VarCode $50;
+	input VarNo $ VarCode $ @@;
+	Order = _n_;
+datalines;
+1.,OHS03
+2a.,OPQ01A
+2b.,OPQ01B
+3a.,OPQ02A
+3b.,OPQ02B
+4a.,OPQ03A
+4b.,OPQ03B
+5a.,OPQ04A
+5b.,OPQ04B
+6a.,OPQ05A
+6b.,OPQ05B
+7a.,OPQ06A
+7b.,OPQ06B
+8.,BUOPT01
+9.,OHS03X
+;
+run;
+
+data VarsO3;
+	infile datalines dlm=',';
+	length VarNo $7 VarCode $50;
+	input VarNo $ VarCode $ @@;
+	Order = _n_;
+datalines;
+1.,EHS16A
+1a.,EHS16B_n
+1b.,EHS16B_s_n
+2.,EHS01
+3.,EHS02
+4.,EHS03
+5.,EHS04
+5a.,EHS04A
+5a_n.,EHS04A_n
+6.,EHS05
+7.,EHS07
+8.,EHS08A
+8a.,EHS08B
+8a_n.,EHS08B_n
+9.,EHS09A
+9a.,EHS09B
+9a_n.,EHS09B_n
+10.,ESD10A
+10a.,EHS10B
+10a_n.,EHS10B_n
+11.,EHS11A
+11a.,EHS11B
+11a_n.,EHS11B_n
+12.,EHS12
+12a.,EHS12_s_n
+13.,EHS13
+14.,EHS14
+15.,EHS15
+15a.,EHS15_n
+;
+run;
+
+data VarsO4;
+	infile datalines dlm=',';
+	length VarNo $7 VarCode $50;
+	input VarNo $ VarCode $ @@;
+	Order = _n_;
+datalines;
+1.,EBE01
+1a.,EBE01_n
+2.,EBE03
+3.,EBE03A
+4.,EBE04
+5.,EBE05A
+6.,EBE05B
+7.,EBE06
+8.,EBE07
+9.,EBE08A
+10.,EBE08B
+11.,EBE02
+11a.,EBE02A_s_n
+12.,OBE09
+13.,OBE10
+14.,OBE11
+15.,OBE12
+run;
+
+data VarsO5;
+	infile datalines dlm=',';
+	length VarNo $7 VarCode $50;
+	input VarNo $ VarCode $ @@;
+	Order = _n_;
+datalines;
+1.,EKN01X
+2.,EKN02X
+3.,EKN04X
+4.,EKN05X
+5.,EKN03X
+6.,EKN07XA
+7.,OKN05
+8.,EKN10X
+9.,EKN08XA
+10.,OKN08
+11.,EKN12
+12.,EKN08XB
+13.,EKN11
+14.,EKN07XB
+15.,OKN06
+16.,OKN07
+17.,OKN09
+18.,EKN09N
+19.,OKN04N
+20.,OKN02N
+21.,OKN06NA
+22.,OKN06NB
+23.,OKN01
+24a.,BUOPT02A
+24b.,BUOPT02B
+24c.,BUOPT02C
+24d.,BUOPT02D
+24e.,BUOPT02E
+24f.,BUOPT02F
+;
+run;
+
+data VarsO6;
+	infile datalines dlm=',';
+	length VarNo $7 VarCode $50;
+	input VarNo $ VarCode $ @@;
+	Order = _n_;
+datalines;
+1a.,OBE03A
+1b.,OBE04A
+1c.,OBE02A
+2a.,OBE03B
+2b.,OBE04B
+2c.,OBE02B
+3a.,OBE03D
+3b.,OBE04D
+3c.,OBE02D
+4a.,OBE03H
+4b.,OBE04H
+4c.,OBE02H
+5a.,OBE03J
+5b.,OBE04J
+5c.,OBE02J
+6a.,OBE03N
+6b.,OBE04N
+6c.,OBE02N
+7a.,OBE03E
+7b.,OBE04E
+7c.,OBE02E
+8a.,OBE03K
+8b.,OBE04K
+8c.,OBE02K
+9a.,OBE03L
+9b.,OBE04L
+9c.,OBE02L
+10a.,OBE03M
+10b.,OBE04M
+10c.,OBE02M
+11a.,OBE03C
+11b.,OBE04C
+11c.,OBE02C
+12a.,OBE03F
+12b.,OBE04F
+12c.,OBE02F
+;
+run;
+
+data VarsO7;
+	infile datalines dlm=',';
+	length VarNo $7 VarCode $50;
+	input VarNo $ VarCode $ @@;
+	Order = _n_;
+datalines;
+1.,OHB01
+2.,OHB09
+3.,OHB10
+4.,OHB05
+5.,OHB02
+6.,OHB11
+7.,OHB06
+8.,OHB03
+9.,OHB12
+10.,S1HB20
+11.,OHB08
+12.,OHB04
+13.,OHB13
+14.,OHB14
+15.,OHB15
+16.,OHB16
+17.,OHB17
+18.,OHB07A
+19.,OHB07B
+20.,OHB07C
+21.,OHB07D
+22.,OHB07E
+23.,OHB18A
+24.,OHB18B
+25.,OHB18C
+26.,OHB18D
+27.,OHB18E
+28.,OHB18F
+29.,OHB18G
+30.,OHB18H
+31.,OHB18I
+32.,OHB18J
+33.,OHB18K
+34.,OHB18L
+35.,OHB18M
+36.,OHB18N
+37.,OHB18O
+38.,OHB19P
+;
+run;
+
+data VarsO8;
+	infile datalines dlm=',';
+	length VarNo $7 VarCode $50;
+	input VarNo $ VarCode $ @@;
+	Order = _n_;
+datalines;
+0.,Visit_err
+1.,OST01
+2.,OST02
+3.,OHS01
+4.,OBE01
+5.,ESD03
+V.,visit_indc
+6.,ESD03A
+7.,OSD02MOS1
+8.,OSD02AOS2
+9.,OSD02MOS3
+10.,OSD02AOS4
+11.,OSD02AOS5
+12.,OSD02MOS6
+13.,OSD02MOS7
+14.,OSD02MOS8
+15.,OSD02AOS9
+16.,OSD02AOS10
+17.,OSD02MOS11
+18.,OSD02AOS12
+;
+run;
+
+data VarsO9;
+	infile datalines dlm=',';
+	length VarNo $7 VarCode $50;
+	input VarNo $ VarCode $ @@;
+	Order = _n_;
+datalines;
+0.,visit_indc
+1.,ESD13
+1a.,ESD13_77
+2.,ESD11
+3.,ESD09
+4.,ESD04
+4a.,ESD04_n
+5.,OSD07
+5a.,ESD05_n
+6.,ESD07
+6a.,OSD07_n
+7.,ESD06
+8.,OSD06A
+9.,OSD06B
+10.,ODS06C
+11.,OSD06D
+12.,BUHS01
+13.,BUHS02
+14.,BUHS03
+15.,BUHS04
+16.,BUHS05
+17.,BUHS06
+18.,BUHS07
+19.,BUHS08
+20.,BUHS09
+;
+run;
+
+proc format;
+	value visits . = "Subtotal"
+				 1 = "Baseline Visit"
+		  		 366 = "12 Month Visit"
+		  		 731 = "24 Month Visit";
+run;
+
+%macro reportData(dataset,IsNumeric=1);
+	data _null_;
+		call symput("SkipCodeNum",".O,.M,.N,.P");
+		call symput("SkipCodeChar",'"O","M","N","P"');
+		call symput("FormNo",substr("&dataset",1,2));
+	run;
+	%put &SkipCodeNum;
+	%put &SkipCodeChar;
+	%put &FormNo;
+
+	proc sql noprint;
+		select VarCode into :VarList&FormNo separated by ' '
+		from Vars&FormNo;
+		select VarNo into :VarNo&FormNo separated by ','
+		from Vars&FormNo;
+		%put &&VarList&FormNo;
+		%put &&VarNo&FormNo;
+	quit;
+
+	data _null_;
+		call symput("VarListLen&FormNo",countw("&&VarList&FormNo",' '));
+	run;
+	%put &&VarListLen&FormNo;
+
+	data &dataset._f;
+		set &dataset;
+		length its $500 cnt_M 8 cnt_N 8 cnt_O 8 cnt_P 8 cnt_total 8;
+		format Day_1 visits.;
+		label cnt_M = "Missing Count (M)"
+			  cnt_N = "Not Missing Count (N)"
+			  cnt_O = "Out of Range Count (O)"
+			  cnt_P = "Indeterminate Count (P)"
+			  cnt_total = "Total Errors"
+			  its = "List of Errors"
+			  form_v = "Form Version";
+		%if &IsNumeric = 1 %then %do;
+			array a(&&VarListLen&FormNo) &&VarList&FormNo;
+		%end;
+		%else %do;
+			array a(&&VarListLen&FormNo) $ &&VarList&FormNo;
+		%end;
+		Year = year(visit_date);
+		Month = month(visit_date);
+		form_sub = substr(form,1,length(form)-3);
+		form_v = substr(form,length(form)-1,2);
+		comp_total = &&VarListLen&FormNo;
+		its = "";
+		cnt_M = 0;
+		cnt_N = 0;
+		cnt_O = 0;
+		cnt_P = 0;
+		cnt_total = 0;
+		do i = 1 to &&VarListLen&FormNo;
+			%if &IsNumeric = 1 %then %do;
+				if a(i) in (&SkipCodeNum) then do;
+					its = cat(strip(its),' ',strip(scan("&&VarNo&FormNo",i,',')),strip(a(i)),';');
+					if a(i) = .M then cnt_M + 1;
+					else if a(i) = .N then cnt_N + 1;
+					else if a(i) = .O then cnt_O + 1;
+					else cnt_P + 1;
+					if a(i) ne .P then cnt_total + 1;
+				end;
+			%end;
+			%else %do;
+				if a(i) in (&SkipCodeChar) then do;
+					its = cat(strip(its),' ',strip(scan("&&VarNo&FormNo",i,',')),strip(a(i)),';');
+					if a(i) = "M" then cnt_M + 1;
+					else if a(i) = "N" then cnt_N + 1;
+					else if a(i) = "O" then cnt_O + 1;
+					else cnt_P + 1;
+					if a(i) ne "P" then cnt_total + 1;
+				end;
+			%end;
+		end;
+		if its ne "" then do;
+			its = substr(its,1,length(its)-1);
+		end;
+		*if cnt_total ne 0;
+		if cnt_total ne 0 then err_ind = 1;
+		else err_ind = 0;
+		cnt_ = 1;
+		keep visit_date form_v form_status Sequence_no_ Day_1 cnt_M cnt_N cnt_O cnt_P cnt_total its Year Month form_sub comp_total err_ind cnt_;
+	run;
+	proc sql;
+		create table &dataset._f_temp as
+		select a.*,b.subject_mrn
+		from &dataset._f as a
+		left outer join
+			mrn_dataset as b
+			on a.sequence_no_ = b.sequence_number;
+	quit;
+	data &dataset._f;
+		set &dataset._f_temp;
+	run;
+	proc sort data=&dataset._f;
+	by descending visit_date Day_1 Sequence_no_;
+	run;
+%mend;
+
+%reportData(O1_CHILD_SD_skp,IsNumeric=0);
+%reportData(O2_HEALTH_AND_ACCESS_skp);
+%reportData(O3_INSURANCE_skp);
+%reportData(O4_OH_BEHAVIOR_skp);
+%reportData(O5_OH_KNOWLEDGE_I_skp);
+%reportData(O6_MOTIVATION_skp);
+%reportData(O7_OH_KNOWLEDGE_II_skp);
+%reportData(O8_CAREGIVER_HEALTH_skp);
+%reportData(O9_CAREGIVER_SD_skp);
+
+proc sql;
+	create table summary_data as
+	select *
+	from O1_CHILD_SD_skp_f
+	union corr
+	select *
+	from O2_HEALTH_AND_ACCESS_skp_f
+	union corr
+	select *
+	from O3_INSURANCE_skp_f
+	union corr
+	select *
+	from O4_OH_BEHAVIOR_skp_f
+	union corr
+	select *
+	from O5_OH_KNOWLEDGE_I_skp_f
+	union corr
+	select *
+	from O6_MOTIVATION_skp_f
+	union corr
+	select *
+	from O7_OH_KNOWLEDGE_II_skp_f
+	union corr
+	select *
+	from O8_CAREGIVER_HEALTH_skp_f
+	union corr
+	select *
+	from O9_CAREGIVER_SD_skp_f;
+quit;
+
+data summary_data;
+	set summary_data;
+	if Month = 1 then order_=1;
+	else if Month = 2 then order_ = 2;
+	else if Month = 3 then order_ = 3;
+	else if Month = 4 then order_ = 4;
+	else if Month = 5 then order_ = 5;
+	else if Month = 6 then order_ = 6;
+	else if Month = 7 then order_ = 7;
+	else if Month = 8 then order_ = 8;
+	else if Month = 9 then order_ = 9;
+	else if Month = 10 then order_ = 10;
+	else if Month = 11 then order_ = 11;
+	else order_ = 12;
+
+	if day_1 = 1 then order_v = 1;
+	else if day_1 = 366 then order_v = 2;
+	else if day_1 = 731 then order_v = 3;
+run;
+
+proc format;
+	value Mon 1="JAN"
+			  2="FEB"
+			  3="MAR"
+			  4="APR"
+			  5="MAY"
+			  6="JUN"
+			  7="JUL"
+			  8="AUG"
+			  9="SEP"
+			  10="OCT"
+			  11="NOV"
+			  12="DEC";
+run;
+
+%macro report(ds);
+	data _null_;
+		call symput("FormNo",substr("&ds",1,2));
+	run;
+	ods tagsets.ExcelXP options(sheet_name="BRFQ &FormNo Form" absolute_column_width='6,5,7,8,4,6,5,5,5,5,5,90' width_fudge='1' AUTOFIT_HEIGHT='YES');
+	proc report data=&ds._skp_f nowd center split=" " headline headskip missing;
+		column
+			Visit_date subject_mrn Sequence_no_ Day_1 form_v form_status cnt_M cnt_N cnt_O cnt_P cnt_total its;
+		define Visit_date / display;
+		define subject_mrn / display "MRN";
+		define Sequence_no_ / display;
+		define Day_1 / display "Visit";
+		define form_v /display;
+		define form_status / display;
+		define cnt_M /display;
+		define cnt_N /display;
+		define cnt_O /display;
+		define cnt_P /display;
+		define cnt_total / display;
+		where cnt_total ne 0;
+	run;
+%mend;
+
+proc sql;
+	drop table descriptions;
+	create table descriptions
+	(
+		type char(20) label='Type',
+		field char(30) label='Form Name or Error Type',
+		description char(500) label='Description'
+	)
+	;	
+	insert into descriptions
+		values('Tabs', 'Summary by Month', "Summary of the Errors by Month, which are restricted to 'Completed', 'Queried' or 'Validated' forms and exclude counts of P codes.")
+		values('Tabs', 'Summary by Form', "Summary of the Errors by Form, which are restricted to 'Completed', 'Queried' or 'Validated' forms and exclude counts of P codes.")
+		values('Tabs', 'Summary by Visit', "Summary of the Errors by Visit, which are restricted to 'Completed', 'Queried' or 'Validated' forms and exclude counts of P codes.")
+		values('Tabs', 'Summary by Participant', "Summary of the Errors by Participant, which are restricted to 'Completed', 'Queried' or 'Validated' forms and exclude counts of P codes.")
+		values('Tabs', 'BRFQ O1 Form', 'Child Socio-demographic Information, Baseline Only')
+		values('Tabs', 'BRFQ O2 Form', 'Health and Access')
+		values('Tabs', 'BRFQ O3 Form', 'Insurance, Both Baseline and Post-Baseline')
+		values('Tabs', 'BRFQ O4 Form', 'Parents Behavior')
+		values('Tabs', 'BRFQ O5 Form', 'Oral Health Knowledge I')
+		values('Tabs', 'BRFQ O6 Form', 'Parents Motivation')
+		values('Tabs', 'BRFQ O7 Form', 'Oral Health Knowledge II')
+		values('Tabs', 'BRFQ O8 Form', 'Caregiver Health')
+		values('Tabs', 'BRFQ O9 Form', 'Caregiver Socio-demographic Information')
+		values('Error Type', 'M - Missing', 'A missing response for an item that should have been answered.')
+		values('Error Type', 'N - Not Missing', 'A recorded response for an item that should not have been answered (because the item should have been skipped by a skip pattern)')
+		values('Error Type', 'P - Indeterminate', 'This code is used only for items within a skip pattern.  The correctness of item response (either observed or missing) is indeterminate because of a an error made in the response to one or more prior items that control the skip pattern (it is unclear whether the skip pattern should have been activated). Counts of P codes are excluded from calculations in the summary tabs.')
+		values('Error Type', 'O - Out of Range', 'Out of range values, e.g., if a field took values that is not defined for the current field.')
+		values('Other', 'Item No.', 'The number before each error type (M,N,O,P) is the question item number in the corresponding BRFQ form.')
+		values('Other', "Date of Data from Oncore", "&DataFolder")
+	;
+quit;
+
+proc report data=summary_data nowd center split=" " headline headskip missing out=byParticipantData;
+		column
+			Sequence_no_ order_v day_1 cnt_total comp_total P_err err_ind cnt_ P_form ;
+		define Sequence_no_ / group;
+		define order_v / group noprint;
+		define day_1 / group ;
+		define cnt_total / analysis;
+		define comp_total / analysis "Total Questions";
+		define P_err / computed "% Questions w/ Errors";
+		define err_ind / analysis "Total Forms w/ Errors";
+		define cnt_ / analysis "Total Forms";
+		define P_form / computed "% Forms w/ Errors";
+
+		compute P_err;
+			P_err = round(_C4_/_C5_*100,.1);
+		endcomp;
+
+		compute P_form;
+			P_form = round(_C7_/_C8_*100,.1);
+		endcomp;
+
+		where form_status ne "Started";
+	run;
+data byParticipantData;
+	set byParticipantData;
+	if cnt_total ne 0;
+run;
+
+
+options missing=0;
+ods html close;
+ods tagsets.ExcelXP path="&ReportDir" file="BRFQ_OHAPH_&reportDate..xml" style=Statistical options(AUTOFIT_HEIGHT='YES' FROZEN_HEADERS = 'yes');
+	ods tagsets.ExcelXP options(sheet_name='Key' absolute_column_width='6,15,82' width_fudge='1');
+	proc sql;
+		select type,field,description
+		from descriptions;
+	quit;
+	ods tagsets.ExcelXP options(sheet_name="Summary by Month" absolute_column_width='6' width_fudge='1' AUTOFIT_HEIGHT='NO');
+	proc report data=summary_data nowd center split=" " headline headskip missing;
+		column
+			Year order_ Month form_sub,(cnt_total comp_total err_ind cnt_) ("Grand Totals"(cnt_total comp_total P_err err_ind cnt_ P_form));
+		define Year / group;
+		define order_ / group noprint;
+		define Month / group format=Mon.;
+		define form_sub / across "Form";
+		define cnt_total / analysis;
+		define comp_total / analysis "Total Questions";
+		define P_err / computed "% Questions w/ Errors";
+		define err_ind / analysis "Total Forms w/ Errors";
+		define cnt_ / analysis "Total Forms";
+		define P_form / computed "% Forms w/ Errors";
+
+		compute P_err;
+			P_err = round(_C40_/_C41_ * 100,.1);
+		endcomp;
+
+		compute P_form;
+			P_form = round(_C43_/_C44_*100,.1);
+		endcomp;
+
+		break after Year/ summarize;
+		rbreak after/ summarize;
+
+		compute after Year;
+			line '                                                         ';
+		endcomp;
+
+		where form_status ne "Started";
+	run;
+	ods tagsets.ExcelXP options(sheet_name="Summary by Form" absolute_column_width='12,10,8,8,8,8,8,8,8,8,8,8' width_fudge='1' AUTOFIT_HEIGHT='YES');
+	proc report data=summary_data nowd center split=" " headline headskip missing;
+		column
+			form_sub order_v day_1 ("Error Type"(cnt_M cnt_N cnt_O cnt_P)) ("Grand Totals"(cnt_total comp_total P_err err_ind cnt_ P_form));
+		define form_sub / group "Form";
+		define order_v / group noprint;
+		define day_1 / group "Visit" ;
+		define cnt_M / analysis;
+		define cnt_N / analysis;
+		define cnt_O / analysis;
+		define cnt_P / analysis;
+		define cnt_total / analysis;
+		define comp_total / analysis "Total Questions";
+		define P_err / computed "% Questions w/ Errors";
+		define err_ind / analysis "Total Forms w/ Errors";
+		define cnt_ / analysis "Total Forms";
+		define P_form / computed "% Forms w/ Errors";
+
+		compute P_err;
+			P_err = round(_C8_/_C9_*100,.1);
+		endcomp;
+
+		compute P_form;
+			P_form = round(_C11_/_C12_*100,.1);
+		endcomp;
+
+		break after form_sub/ summarize;
+		rbreak after/ summarize;
+
+		compute after form_sub;
+			form_sub = 'Subtotal';
+			line '                                                         ';
+		endcomp;
+
+		compute after;
+			form_sub = 'Total';
+		endcomp;
+
+		where form_status ne "Started";
+	run;
+	ods tagsets.ExcelXP options(sheet_name="Summary by Visit" absolute_column_width='10,12,8,8,8,8,8,8,8,8,8,8' width_fudge='1' AUTOFIT_HEIGHT='YES');
+	proc report data=summary_data nowd center split=" " headline headskip missing;
+		column
+			order_v day_1 form_sub ("Error Type"(cnt_M cnt_N cnt_O cnt_P)) ("Grand Totals"(cnt_total comp_total P_err err_ind cnt_ P_form));
+		define order_v / group noprint;
+		define day_1 / group "Visit" format=visits.;
+		define form_sub / group "Form";
+		define cnt_M / analysis;
+		define cnt_N / analysis;
+		define cnt_O / analysis;
+		define cnt_P / analysis;
+		define cnt_total / analysis;
+		define comp_total / analysis "Total Questions";
+		define P_err / computed "% Questions w/ Errors";
+		define err_ind / analysis "Total Forms w/ Errors";
+		define cnt_ / analysis "Total Forms";
+		define P_form / computed "% Forms w/ Errors";
+
+		compute P_err;
+			P_err = round(_C8_/_C9_*100,.1);
+		endcomp;
+
+		compute P_form;
+			P_form = round(_C11_/_C12_*100,.1);
+		endcomp;
+
+		break after day_1/ summarize;
+		rbreak after/ summarize;
+
+		compute after day_1;
+			day_1 = .;
+			line '                                                         ';
+		endcomp;
+
+		where form_status ne "Started";
+	run;
+	ods tagsets.ExcelXP options(sheet_name="Summary by Participant" absolute_column_width='8,10,8,8,8,8,8,8' width_fudge='1' AUTOFIT_HEIGHT='YES');
+	proc report data=byParticipantData nowd center split=" " headline headskip missing;
+		column
+			Sequence_no_ order_v day_1 cnt_total comp_total P_err err_ind cnt_ P_form ;
+		define Sequence_no_ / group;
+		define order_v / group noprint;
+		define day_1 / group "Visit" ;
+		define cnt_total / analysis;
+		define comp_total / analysis "Total Questions";
+		define P_err / analysis "% Questions w/ Errors";
+		define err_ind / analysis "Total Forms w/ Errors";
+		define cnt_ / analysis "Total Forms";
+		define P_form / analysis "% Forms w/ Errors";
+	run;
+	%report(O1_CHILD_SD);
+	%report(O2_HEALTH_AND_ACCESS);
+	%report(O3_INSURANCE);
+	%report(O4_OH_BEHAVIOR);
+	%report(O5_OH_KNOWLEDGE_I);
+	%report(O6_MOTIVATION);
+	%report(O7_OH_KNOWLEDGE_II);
+	%report(O8_CAREGIVER_HEALTH);
+	%report(O9_CAREGIVER_SD);
+
+ods tagsets.ExcelXP close;
+ods html;
+options missing=.;
